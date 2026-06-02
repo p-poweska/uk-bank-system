@@ -37,7 +37,7 @@ const Dashboard = () => {
             setAccountCount(accountsRes.data.length);
 
             
-            const sum = accountsRes.data.reduce((acc: number, curr: any) => acc + parseFloat(curr.balance), 0);
+            const sum = accountsRes.data.reduce((acc: number, curr: any) => acc + parseFloat(curr.available_balance), 0);
             setTotalBalance(sum);
 
         } catch (err) {
@@ -142,7 +142,7 @@ const Dashboard = () => {
                                             {new Intl.NumberFormat('en-GB', {
                                                 style: 'currency',
                                                 currency: account.currency || 'GBP'
-                                            }).format(parseFloat(account.balance))}
+                                            }).format(parseFloat(account.available_balance))}
                                         </h2>
                                     </div>
 

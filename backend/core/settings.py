@@ -46,6 +46,7 @@ INSTALLED_APPS = [
     'cards',
     'transfers',
     'notifications',
+    'klik',
 ]
 
 MIDDLEWARE = [
@@ -159,3 +160,7 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': False,
     'BLACKLIST_AFTER_ROTATION': True,
 }
+
+KLIK_BASE_URL = os.environ.get("KLIK_BASE_URL", "http://host.docker.internal:8000/api/v1")
+KLIK_BANK_API_KEY = os.environ.get("KLIK_BANK_API_KEY", "CHANGE_ME")
+KLIK_ZONE = os.environ.get("KLIK_ZONE", "UK")

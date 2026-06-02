@@ -125,7 +125,7 @@ class OwnTransferView(APIView):
             except Account.DoesNotExist:
                 return Response({"error": f"Target account {to_id} not found or unauthorized"}, status=404)
 
-            if source_acc.balance < amount:
+            if source_acc.available_balance < amount:
                 return Response({"error": "Insufficient funds"}, status=400)
 
             if source_acc == target_acc:

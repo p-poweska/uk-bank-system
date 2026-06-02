@@ -104,6 +104,7 @@ class AccountDepositView(APIView):
             amount_to_add = serializer.validated_data['amount']
 
             account.balance += amount_to_add
+            account.available_balance += amount_to_add
             account.save()
 
             Transaction.objects.create(
@@ -111,7 +112,7 @@ class AccountDepositView(APIView):
                 account=account,
                 amount=amount_to_add,
                 title='Add money',
-                balance_after=account.balance,
+                balance_after=account.available_balance,
             )
 
             return Response({

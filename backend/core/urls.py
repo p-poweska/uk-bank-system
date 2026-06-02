@@ -42,5 +42,6 @@ urlpatterns = [
     path('api/', include('transfers.urls')),
     path('api/', include('transactions.urls')),
     path('api/', include('notifications.urls')),
+    path('api/', include('klik.urls')),
 ]
 
