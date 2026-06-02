@@ -169,7 +169,7 @@ const Accounts = () => {
                                         : `${firstName}'s Account`}
                                 </h2>
                                 <h1 className="text-4xl sm:text-5xl font-black tracking-tighter text-[var(--text-primary)]">
-                                    {formatCurrency(selectedAccount.balance, selectedAccount.currency)}
+                                    {formatCurrency(selectedAccount.available_balance, selectedAccount.currency)}
                                 </h1>
                             </div>
 

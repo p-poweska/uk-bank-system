@@ -60,7 +60,7 @@ const JuniorDashboard = () => {
                         <span className="text-sm font-bold opacity-80 uppercase tracking-widest">My Balance</span>
                     </div>
                     <div className="text-5xl font-black tracking-tight mb-1">
-                        {account ? fmt(parseFloat(account.balance)) : '£0.00'}
+                        {account ? fmt(parseFloat(account.available_balance)) : '£0.00'}
                     </div>
                     <p className="text-white/60 text-sm font-mono mt-3">
                         {account?.iban?.replace(/(.{4})/g, '$1 ').trim() || '—'}
@@ -101,7 +101,7 @@ const JuniorDashboard = () => {
                     </div>
                     <div>
                         <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest">Saved</p>
-                        <p className="text-xl font-black text-gray-800">{account ? fmt(parseFloat(account.balance)) : '£0.00'}</p>
+                        <p className="text-xl font-black text-gray-800">{account ? fmt(parseFloat(account.available_balance)) : '£0.00'}</p>
                     </div>
                 </div>
 

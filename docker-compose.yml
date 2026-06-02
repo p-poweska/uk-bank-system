@@ -9,15 +9,15 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
-      - "5432:5432"
+      - "5532:5532"
 
   backend:
     build: ./backend
-    command: python manage.py runserver 0.0.0.0:8000
+    command: python manage.py runserver 0.0.0.0:8001
     volumes:
       - ./backend:/app
     ports:
-      - "8000:8000"
+      - "8001:8001"
     environment:
       - DB_NAME=${POSTGRES_DB}
       - DB_USER=${POSTGRES_USER}
@@ -26,6 +26,9 @@ services:
       - DB_PORT=5432
       - SECRET_KEY=${DJANGO_SECRET_KEY}
       - DEBUG=${DJANGO_DEBUG}
+      - KLIK_BASE_URL=${KLIK_BASE_URL}
+      - KLIK_BANK_API_KEY=${KLIK_BANK_API_KEY}
+      - KLIK_ZONE=${KLIK_ZONE}
     depends_on:
       - db
 

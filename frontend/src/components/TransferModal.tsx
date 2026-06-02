@@ -146,7 +146,7 @@ const TransferModal: React.FC<TransferModalProps> = ({
             return;
         }
         const sourceAccount = availableFromAccounts.find(acc => acc.id === fromAccountId);
-        if (sourceAccount && parsedAmount > parseFloat(sourceAccount.balance)) {
+        if (sourceAccount && parsedAmount > parseFloat(sourceAccount.available_balance)) {
             setError("Insufficient funds. You don't have enough money.");
             return;
         }
