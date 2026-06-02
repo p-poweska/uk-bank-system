@@ -29,5 +29,11 @@ class Customer(models.Model):
         related_name='children'
     )
 
+    klik_phone_alias = models.CharField(
+    max_length=16,
+    blank=True,
+    null=True
+    )
+
     kyc_verified = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

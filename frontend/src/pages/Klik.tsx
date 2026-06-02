@@ -9,6 +9,8 @@ import {
     CheckCircle2,
     XCircle,
     Store,
+    Send,
+    Phone,
 } from 'lucide-react';
 import api from '../api/axios';
 
@@ -36,11 +38,35 @@ interface PendingPayment {
 const Klik = () => {
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [pendingPayments, setPendingPayments] = useState<PendingPayment[]>([]);
+
     const [code, setCode] = useState('');
     const [timeLeft, setTimeLeft] = useState(0);
     const [loading, setLoading] = useState(false);
+
     const [pendingLoading, setPendingLoading] = useState(false);
     const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+
+    const [aliasPhone, setAliasPhone] = useState('');
+    const [aliasLoading, setAliasLoading] = useState(false);
+
+    const [p2pPhone, setP2pPhone] = useState('');
+    const [p2pAmount, setP2pAmount] = useState('');
+    const [p2pLoading, setP2pLoading] = useState(false);
+
+    const [registeredAliasPhone, setRegisteredAliasPhone] = useState<string | null>(null);
+
+    const [message, setMessage] = useState<{
+        type: 'success' | 'error';
+        text: string;
+    } | null>(null);
+
+    const showMessage = (type: 'success' | 'error', text: string) => {
+        setMessage({ type, text });
+
+        setTimeout(() => {
+            setMessage(null);
+        }, 4000);
+    };
 
     const currentAccount = useMemo(() => {
         return accounts.find(
@@ -69,9 +95,28 @@ const Klik = () => {
         }
     };
 
+    const fetchAlias = async () => {
+        try {
+            const res = await api.get('/klik/alias/');
+            const phone = res.data.phone;
+
+            if (phone) {
+                setRegisteredAliasPhone(phone);
+                setAliasPhone(phone.replace('+44', ''));
+            } else {
+                setRegisteredAliasPhone(null);
+                setAliasPhone('');
+            }
+        } catch (err) {
+            console.error('Failed to fetch KLIK alias', err);
+        }
+    };
+
+
     useEffect(() => {
         fetchAccounts();
         fetchPendingPayments();
+        fetchAlias();
 
         const interval = setInterval(() => {
             fetchPendingPayments();
@@ -99,6 +144,19 @@ const Klik = () => {
         return `${min}:${sec.toString().padStart(2, '0')}`;
     };
 
+    const formatCurrency = (amount: string | number, currency = 'GBP') => {
+        return new Intl.NumberFormat('en-GB', {
+            style: 'currency',
+            currency,
+        }).format(Number(amount));
+    };
+
+    const getApiErrorMessage = (err: any, fallback: string) => {
+        return err?.response?.data?.details || err?.response?.data?.error || fallback;
+    };
+
+
+
     const handleGenerateCode = async () => {
         if (!currentAccount) return;
 
@@ -110,6 +168,7 @@ const Klik = () => {
             setTimeLeft(res.data.expires_in ?? 120);
         } catch (err) {
             console.error('Failed to generate KLIK code', err);
+            showMessage('error', getApiErrorMessage(err, 'Failed to generate KLIK code'));
         } finally {
             setLoading(false);
         }
@@ -124,6 +183,7 @@ const Klik = () => {
             await fetchAccounts();
         } catch (err) {
             console.error('Failed to accept KLIK payment', err);
+            showMessage('error', getApiErrorMessage(err, 'Failed to accept KLIK payment'));
         } finally {
             setActionLoadingId(null);
         }
@@ -137,15 +197,80 @@ const Klik = () => {
             await fetchPendingPayments();
         } catch (err) {
             console.error('Failed to reject KLIK payment', err);
+            showMessage('error', getApiErrorMessage(err, 'Failed to reject KLIK payment'));
         } finally {
             setActionLoadingId(null);
+        }
+    };
+
+    const handleRegisterAlias = async () => {
+        if (!aliasPhone.trim()) return;
+
+        setAliasLoading(true);
+
+        try {
+            await api.post('/klik/alias/register/', {
+                phone: `+44${aliasPhone.trim()}`,
+            });
+            await fetchAlias();
+            showMessage('success', 'Phone alias registered successfully');
+        } catch (err) {
+            console.error('Failed to register phone alias', err);
+            showMessage('error', getApiErrorMessage(err, 'Failed to register phone alias'));
+        } finally {
+            setAliasLoading(false);
+        }
+    };
+
+    const handleRemoveAlias = async () => {
+        if (!aliasPhone.trim()) return;
+
+        setAliasLoading(true);
+
+        try {
+            await api.delete('/klik/alias/remove/', {
+                data: {
+                    phone: registeredAliasPhone || `+44${aliasPhone.trim()}`
+                },
+            });
+            await fetchAlias();
+            showMessage('success', 'Phone alias removed');
+        } catch (err) {
+            console.error('Failed to remove phone alias', err);
+            showMessage('error', getApiErrorMessage(err, 'Failed to remove phone alias'));
+        } finally {
+            setAliasLoading(false);
+        }
+    };
+
+    const handleSendP2P = async () => {
+        if (!p2pPhone.trim() || !p2pAmount.trim()) return;
+
+        setP2pLoading(true);
+
+        try {
+            await api.post('/klik/p2p/send/', {
+                phone: `+44${p2pPhone.trim()}`,
+                amount: p2pAmount,
+            });
+
+            showMessage('success', 'KLIK transfer sent successfully');
+
+            setP2pPhone('');
+            setP2pAmount('');
+
+            await fetchAccounts();
+        } catch (err) {
+            console.error('Failed to send KLIK P2P transfer', err);
+            showMessage('error', getApiErrorMessage(err, 'Failed to send KLIK P2P transfer'));
+        } finally {
+            setP2pLoading(false);
         }
     };
 
     return (
         <div className="h-full overflow-y-auto custom-scrollbar">
             <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-
                 <section>
                     <div className="flex items-center gap-4 mb-2">
                         <div className="w-14 h-14 rounded-3xl bg-[#00FF85]/10 border border-[#00FF85]/20 flex items-center justify-center">
@@ -157,11 +282,22 @@ const Klik = () => {
                                 KLIK
                             </h1>
                             <p className="text-[var(--text-muted)] text-sm">
-                                Generate a one-time payment code and confirm KLIK payments.
+                                Generate a one-time payment code, confirm payments and send money by phone number.
                             </p>
                         </div>
                     </div>
                 </section>
+
+                {message && (
+                    <div
+                        className={`rounded-2xl border p-4 text-sm font-bold ${message.type === 'success'
+                            ? 'bg-[#00FF85]/10 border-[#00FF85]/20 text-[#00FF85]'
+                            : 'bg-red-500/10 border-red-500/30 text-red-400'
+                            }`}
+                    >
+                        {message.text}
+                    </div>
+                )}
 
                 {!currentAccount ? (
                     <div className="rounded-[2rem] border border-yellow-500/20 bg-yellow-500/10 p-6 flex items-start gap-4">
@@ -205,7 +341,7 @@ const Klik = () => {
                                         <div className="flex justify-between text-sm">
                                             <span className="text-[var(--text-muted)]">Balance</span>
                                             <span className="font-bold text-[var(--text-primary)]">
-                                                £{currentAccount.available_balance}
+                                                {formatCurrency(currentAccount.available_balance, currentAccount.currency)}
                                             </span>
                                         </div>
                                     </div>
@@ -262,6 +398,146 @@ const Klik = () => {
                                     <RefreshCw size={20} className={loading ? 'animate-spin' : ''} />
                                     {code ? 'Generate new code' : 'Generate KLIK code'}
                                 </button>
+                            </div>
+                        </section>
+
+                        <section className="rounded-[2rem] border border-[var(--border)] bg-[var(--bg-surface)] p-6 shadow-xl">
+                            <div className="flex items-center gap-4 mb-6">
+                                <div className="w-12 h-12 rounded-2xl bg-[#00FF85]/10 flex items-center justify-center">
+                                    <Phone className="text-[#00FF85]" size={24} />
+                                </div>
+
+                                <div>
+                                    <h2 className="text-lg font-bold text-[var(--text-primary)]">
+                                        Phone alias
+                                    </h2>
+                                    <p className="text-sm text-[var(--text-muted)]">
+                                        {registeredAliasPhone
+                                            ? 'This phone number is registered for receiving KLIK transfers.'
+                                            : 'Register your phone number to receive KLIK transfers.'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4">
+                                <div>
+                                    <label className="block text-xs font-black uppercase tracking-[0.2em] text-[var(--text-muted)] mb-2">
+                                        Your phone number
+                                    </label>
+
+                                    <div className="relative">
+                                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-primary)] font-bold">
+                                            +44
+                                        </span>
+
+                                        <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={aliasPhone}
+                                            readOnly={!!registeredAliasPhone}
+                                            onChange={(e) => {
+                                                const value = e.target.value.replace(/\D/g, '').slice(0, 9);
+                                                setAliasPhone(value);
+                                            }}
+                                            placeholder="712345678"
+                                            className={`w-full rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border)] pl-16 pr-4 py-4 text-[var(--text-primary)] outline-none focus:border-[#00FF85] ${registeredAliasPhone ? 'opacity-75 cursor-not-allowed' : ''
+                                                }`}
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex items-end">
+                                    <button
+                                        onClick={registeredAliasPhone ? handleRemoveAlias : handleRegisterAlias}
+                                        disabled={
+                                            aliasLoading ||
+                                            (registeredAliasPhone === null && aliasPhone.length !== 9) ||
+                                            (registeredAliasPhone !== null && aliasPhone.trim().length === 0)
+                                        }
+                                        className={`w-full md:w-auto px-6 py-4 rounded-2xl font-black transition-all disabled:opacity-50 disabled:cursor-not-allowed ${registeredAliasPhone
+                                            ? 'bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400'
+                                            : 'bg-[#00FF85] hover:bg-[#00e074] text-black'
+                                            }`}
+                                    >
+                                        {registeredAliasPhone ? 'Remove' : 'Register'}
+                                    </button>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section className="rounded-[2rem] border border-[var(--border)] bg-[var(--bg-surface)] p-6 shadow-xl">
+                            <div className="flex items-center gap-4 mb-6">
+                                <div className="w-12 h-12 rounded-2xl bg-[#00FF85]/10 flex items-center justify-center">
+                                    <Send className="text-[#00FF85]" size={24} />
+                                </div>
+
+                                <div>
+                                    <h2 className="text-lg font-bold text-[var(--text-primary)]">
+                                        Send money by phone number
+                                    </h2>
+                                    <p className="text-sm text-[var(--text-muted)]">
+                                        Transfer money instantly using a registered KLIK phone alias.
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-4">
+                                <div>
+                                    <label className="block text-xs font-black uppercase tracking-[0.2em] text-[var(--text-muted)] mb-2">
+                                        Phone number
+                                    </label>
+
+                                    <div className="relative">
+                                        <Phone
+                                            size={18}
+                                            className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
+                                        />
+                                        <div className="relative">
+                                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-primary)] font-bold">
+                                                +44
+                                            </span>
+
+                                            <input
+                                                type="text"
+                                                inputMode="numeric"
+                                                value={p2pPhone}
+                                                onChange={(e) => {
+                                                    const value = e.target.value.replace(/\D/g, '').slice(0, 9);
+                                                    setP2pPhone(value);
+                                                }}
+                                                placeholder="712345678"
+                                                className="w-full rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border)] pl-16 pr-4 py-4 text-[var(--text-primary)] outline-none focus:border-[#00FF85]"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-black uppercase tracking-[0.2em] text-[var(--text-muted)] mb-2">
+                                        Amount
+                                    </label>
+
+                                    <input
+                                        type="number"
+                                        min="0.01"
+                                        step="0.01"
+                                        value={p2pAmount}
+                                        onChange={(e) => setP2pAmount(e.target.value)}
+                                        placeholder="0.00"
+                                        className="w-full rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border)] px-4 py-4 text-[var(--text-primary)] outline-none focus:border-[#00FF85]"
+                                    />
+                                </div>
+
+                                <div className="flex items-end">
+                                    <button
+                                        onClick={handleSendP2P}
+                                        disabled={p2pLoading || p2pPhone.length !== 9 || !p2pAmount.trim()}
+                                        className="w-full md:w-auto px-6 py-4 rounded-2xl bg-[#00FF85] hover:bg-[#00e074] text-black font-black transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                    >
+                                        <Send size={20} />
+                                        Send
+                                    </button>
+                                </div>
                             </div>
                         </section>
 
@@ -329,7 +605,7 @@ const Klik = () => {
                                                         Amount
                                                     </p>
                                                     <p className="text-3xl font-black text-[var(--text-primary)]">
-                                                        {payment.currency} {payment.amount}
+                                                        {formatCurrency(payment.amount, payment.currency)}
                                                     </p>
 
                                                     <div className="flex flex-col sm:flex-row gap-3 mt-4">

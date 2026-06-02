@@ -48,3 +48,93 @@ def confirm_klik_payment(transaction_id, decision: str, reject_reason: str | Non
         )
 
     return response.json()
+
+def lookup_klik_alias(phone: str):
+    response = requests.get(
+        f"{settings.KLIK_BASE_URL}/aliases/lookup/{phone}",
+        headers=klik_headers(),
+        timeout=10,
+    )
+
+    if response.status_code >= 400:
+        raise requests.HTTPError(
+            f"{response.status_code} Client Error: {response.text} for url: {response.url}",
+            response=response,
+        )
+
+    return response.json()
+
+def register_klik_alias(phone: str, iban: str):
+    response = requests.post(
+        f"{settings.KLIK_BASE_URL}/aliases/register",
+        json={
+            "phone": phone,
+            "iban": iban,
+            "zone": settings.KLIK_ZONE,
+        },
+        headers=klik_headers(),
+        timeout=10,
+    )
+
+    if response.status_code >= 400:
+        raise requests.HTTPError(
+            f"{response.status_code} Client Error: {response.text} for url: {response.url}",
+            response=response,
+        )
+
+    return response.json()
+
+
+def lookup_klik_alias(phone: str):
+    response = requests.get(
+        f"{settings.KLIK_BASE_URL}/aliases/lookup/{phone}",
+        headers=klik_headers(),
+        timeout=10,
+    )
+
+    if response.status_code >= 400:
+        raise requests.HTTPError(
+            f"{response.status_code} Client Error: {response.text} for url: {response.url}",
+            response=response,
+        )
+
+    return response.json()
+
+
+def delete_klik_alias(phone: str):
+    response = requests.delete(
+        f"{settings.KLIK_BASE_URL}/aliases/{phone}",
+        headers=klik_headers(),
+        timeout=10,
+    )
+
+    if response.status_code >= 400:
+        raise requests.HTTPError(
+            f"{response.status_code} Client Error: {response.text} for url: {response.url}",
+            response=response,
+        )
+
+    if response.content:
+        return response.json()
+
+    return {}
+
+
+def delete_klik_alias(phone: str):
+    response = requests.delete(
+        f"{settings.KLIK_BASE_URL}/aliases/{phone}",
+        headers=klik_headers(),
+        timeout=10,
+    )
+
+    if response.status_code >= 400:
+        raise requests.HTTPError(
+            f"{response.status_code} Client Error: {response.text} for url: {response.url}",
+            response=response,
+        )
+
+    if response.content:
+        return response.json()
+
+    return {}
+
