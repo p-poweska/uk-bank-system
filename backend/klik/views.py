@@ -282,6 +282,13 @@ class RejectKlikPaymentView(APIView):
         payment.decided_at = timezone.now()
         payment.save()
 
+        
+        notify(
+            request.user,
+            "KLIK payment rejected",
+            f"Payment of {payment.amount} {payment.currency} to {payment.merchant_name} was rejected.",
+        )
+
         return Response(result)
 
 
@@ -444,6 +451,8 @@ class SendKlikP2PView(APIView):
             balance_after=sender_account.available_balance,
         )
 
+        sender_phone = getattr(request.user.customer, "klik_phone_alias", None) or "another KLIK user"
+
         if recipient_account:
             recipient_account.balance += amount
             recipient_account.available_balance += amount
@@ -453,14 +462,14 @@ class SendKlikP2PView(APIView):
                 user=recipient_account.customer.user,
                 account=recipient_account,
                 amount=amount,
-                title=f"KLIK P2P transfer from {request.user.email}",
+                title=f"KLIK P2P transfer from {sender_phone}",
                 balance_after=recipient_account.available_balance,
             )
 
             notify(
                 recipient_account.customer.user,
                 "KLIK P2P transfer received",
-                f"You received {amount} {sender_account.currency} from {request.user.email}.",
+                f"You received {amount} {sender_account.currency} from {sender_phone}.",
             )
 
         notify(

@@ -133,7 +133,9 @@ class OwnTransferView(APIView):
 
             with transaction.atomic():
                 source_acc.balance -= amount
+                source_acc.available_balance -= amount
                 target_acc.balance += amount
+                source_acc.available_balance += amount
                 source_acc.save()
                 target_acc.save()
 
