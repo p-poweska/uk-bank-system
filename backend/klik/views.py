@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import transaction, models
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -131,20 +131,34 @@ class PendingKlikPaymentsView(APIView):
 
     def get(self, request):
         now = timezone.now()
+        expired_visible_since = now - timezone.timedelta(minutes=5)
 
-        KlikPayment.objects.filter(
+        expired_payments = KlikPayment.objects.filter(
             user=request.user,
             status=KlikPayment.Status.PENDING,
             expiry_time__isnull=False,
             expiry_time__lte=now,
-        ).update(
-            status=KlikPayment.Status.EXPIRED,
-            decided_at=now,
         )
+
+        for payment in expired_payments:
+            payment.status = KlikPayment.Status.EXPIRED
+            payment.decided_at = now
+            payment.save()
+
+            notify(
+                request.user,
+                "KLIK payment expired",
+                f"Payment of {payment.amount} {payment.currency} to {payment.merchant_name} has expired.",
+            )
 
         payments = KlikPayment.objects.filter(
             user=request.user,
-            status=KlikPayment.Status.PENDING,
+        ).filter(
+            models.Q(status=KlikPayment.Status.PENDING) |
+            models.Q(
+                status=KlikPayment.Status.EXPIRED,
+                decided_at__gte=expired_visible_since,
+            )
         ).order_by("-created_at")
 
         return Response([
@@ -185,6 +199,12 @@ class AcceptKlikPaymentView(APIView):
             payment.status = KlikPayment.Status.EXPIRED
             payment.decided_at = timezone.now()
             payment.save()
+
+            notify(
+                request.user,
+                "KLIK payment expired",
+                f"Payment of {payment.amount} {payment.currency} to {payment.merchant_name} has expired",
+            )
 
             return Response(
                 {"error": "KLIK payment has expired."},
