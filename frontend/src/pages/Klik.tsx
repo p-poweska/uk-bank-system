@@ -54,6 +54,8 @@ const Klik = () => {
     const [p2pLoading, setP2pLoading] = useState(false);
 
     const [registeredAliasPhone, setRegisteredAliasPhone] = useState<string | null>(null);
+    const [aliasConfirmAction, setAliasConfirmAction] = useState<'register' | 'remove' | null>(null);
+    const [showP2pConfirm, setShowP2pConfirm] = useState(false);
 
     const [message, setMessage] = useState<{
         type: 'success' | 'error';
@@ -65,7 +67,7 @@ const Klik = () => {
 
         setTimeout(() => {
             setMessage(null);
-        }, 4000);
+        }, 8000);
     };
 
     const currentAccount = useMemo(() => {
@@ -216,7 +218,20 @@ const Klik = () => {
             showMessage('success', 'Phone alias registered successfully');
         } catch (err) {
             console.error('Failed to register phone alias', err);
-            showMessage('error', getApiErrorMessage(err, 'Failed to register phone alias'));
+
+            const errorMessage = getApiErrorMessage(err, 'Failed to register phone alias');
+
+            if (
+                errorMessage.includes('już zarejestrowany') ||
+                errorMessage.includes('already registered') ||
+                errorMessage.includes('already exists') ||
+                errorMessage.includes('AliasAlreadyRegistered') ||
+                errorMessage.includes('alias_phone_unique')
+            ) {
+                showMessage('error', 'This phone number is already registered in KLIK.');
+            } else {
+                showMessage('error', errorMessage);
+            }
         } finally {
             setAliasLoading(false);
         }
@@ -243,9 +258,12 @@ const Klik = () => {
         }
     };
 
-    const handleSendP2P = async () => {
-        if (!p2pPhone.trim() || !p2pAmount.trim()) return;
+    const handleSendP2P = () => {
+        if (p2pPhone.length !== 9 || !p2pAmount.trim()) return;
+        setShowP2pConfirm(true);
+    };
 
+    const handleConfirmP2P = async () => {
         setP2pLoading(true);
 
         try {
@@ -258,6 +276,7 @@ const Klik = () => {
 
             setP2pPhone('');
             setP2pAmount('');
+            setShowP2pConfirm(false);
 
             await fetchAccounts();
         } catch (err) {
@@ -266,6 +285,20 @@ const Klik = () => {
         } finally {
             setP2pLoading(false);
         }
+    };
+
+    const handleConfirmAliasAction = async () => {
+        if (!aliasConfirmAction) return;
+
+        if (aliasConfirmAction === 'register') {
+            await handleRegisterAlias();
+        }
+
+        if (aliasConfirmAction === 'remove') {
+            await handleRemoveAlias();
+        }
+
+        setAliasConfirmAction(null);
     };
 
     return (
@@ -448,7 +481,7 @@ const Klik = () => {
 
                                 <div className="flex items-end">
                                     <button
-                                        onClick={registeredAliasPhone ? handleRemoveAlias : handleRegisterAlias}
+                                        onClick={() => setAliasConfirmAction(registeredAliasPhone ? 'remove' : 'register')}
                                         disabled={
                                             aliasLoading ||
                                             (registeredAliasPhone === null && aliasPhone.length !== 9) ||
@@ -597,6 +630,11 @@ const Klik = () => {
                                                                 Expires at: {new Date(payment.expiry_time).toLocaleString()}
                                                             </p>
                                                         )}
+                                                        {payment.status === 'EXPIRED' && (
+                                                            <p className="mt-2 text-sm font-bold text-yellow-400">
+                                                                This KLIK payment has expired.
+                                                            </p>
+                                                        )}
                                                     </div>
                                                 </div>
 
@@ -611,7 +649,10 @@ const Klik = () => {
                                                     <div className="flex flex-col sm:flex-row gap-3 mt-4">
                                                         <button
                                                             onClick={() => handleAcceptPayment(payment.transaction_id)}
-                                                            disabled={actionLoadingId === payment.transaction_id}
+                                                            disabled={
+                                                                payment.status === 'EXPIRED' ||
+                                                                actionLoadingId === payment.transaction_id
+                                                            }
                                                             className="px-5 py-3 rounded-2xl bg-[#00FF85] hover:bg-[#00e074] text-black font-black transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                                                         >
                                                             <CheckCircle2 size={20} />
@@ -620,7 +661,10 @@ const Klik = () => {
 
                                                         <button
                                                             onClick={() => handleRejectPayment(payment.transaction_id)}
-                                                            disabled={actionLoadingId === payment.transaction_id}
+                                                            disabled={
+                                                                payment.status === 'EXPIRED' ||
+                                                                actionLoadingId === payment.transaction_id
+                                                            }
                                                             className="px-5 py-3 rounded-2xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 font-black transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                                                         >
                                                             <XCircle size={20} />
@@ -637,6 +681,97 @@ const Klik = () => {
                     </>
                 )}
             </div>
+
+            {aliasConfirmAction && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+                    <div className="w-full max-w-md rounded-[2rem] border border-[var(--border)] bg-[var(--bg-surface)] p-6 shadow-2xl">
+                        <h2 className="text-xl font-black text-[var(--text-primary)] mb-2">
+                            {aliasConfirmAction === 'register'
+                                ? 'Register phone alias?'
+                                : 'Remove phone alias?'}
+                        </h2>
+
+                        <p className="text-sm text-[var(--text-muted)] mb-6">
+                            {aliasConfirmAction === 'register'
+                                ? `Are you sure you want to register +44${aliasPhone} as your KLIK phone alias?`
+                                : `Are you sure you want to remove ${registeredAliasPhone || `+44${aliasPhone}`} from KLIK?`}
+                        </p>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setAliasConfirmAction(null)}
+                                disabled={aliasLoading}
+                                className="flex-1 py-3 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] font-black disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                onClick={handleConfirmAliasAction}
+                                disabled={aliasLoading}
+                                className={`flex-1 py-3 rounded-2xl font-black disabled:opacity-50 ${aliasConfirmAction === 'register'
+                                    ? 'bg-[#00FF85] hover:bg-[#00e074] text-black'
+                                    : 'bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400'
+                                    }`}
+                            >
+                                {aliasLoading
+                                    ? 'Processing...'
+                                    : aliasConfirmAction === 'register'
+                                        ? 'Register'
+                                        : 'Remove'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showP2pConfirm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+                    <div className="w-full max-w-md rounded-[2rem] border border-[var(--border)] bg-[var(--bg-surface)] p-6 shadow-2xl">
+                        <h2 className="text-xl font-black text-[var(--text-primary)] mb-2">
+                            Confirm KLIK transfer
+                        </h2>
+
+                        <p className="text-sm text-[var(--text-muted)] mb-6">
+                            Please confirm the transfer details before sending money.
+                        </p>
+
+                        <div className="space-y-3 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border)] p-4 mb-6">
+                            <div className="flex justify-between text-sm">
+                                <span className="text-[var(--text-muted)]">Recipient</span>
+                                <span className="font-bold text-[var(--text-primary)]">
+                                    +44{p2pPhone}
+                                </span>
+                            </div>
+
+                            <div className="flex justify-between text-sm">
+                                <span className="text-[var(--text-muted)]">Amount</span>
+                                <span className="font-bold text-[var(--text-primary)]">
+                                    {formatCurrency(p2pAmount, currentAccount?.currency || 'GBP')}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowP2pConfirm(false)}
+                                disabled={p2pLoading}
+                                className="flex-1 py-3 rounded-2xl bg-[var(--bg-elevated)] border border-[var(--border)] text-[var(--text-primary)] font-black disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+
+                            <button
+                                onClick={handleConfirmP2P}
+                                disabled={p2pLoading}
+                                className="flex-1 py-3 rounded-2xl bg-[#00FF85] hover:bg-[#00e074] text-black font-black disabled:opacity-50"
+                            >
+                                {p2pLoading ? 'Sending...' : 'Confirm'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
