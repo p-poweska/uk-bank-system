@@ -7,6 +7,7 @@ interface Account {
     account_type: string;
     balance: string;
     currency: string;
+    available_balance: string;
 }
 
 interface AddMoneyModalProps {
@@ -144,7 +145,7 @@ const AddMoneyModal: React.FC<AddMoneyModalProps> = ({ isOpen, onClose, accounts
 
                     {selectedAccount && (
                         <p className="text-xs text-gray-400 mt-3 ml-2">
-                            Current Balance:  <span className="text-sm font-bold text-white tracking-wide">£{parseFloat(selectedAccount.balance).toFixed(2)}</span>
+                            Current Balance:  <span className="text-sm font-bold text-white tracking-wide">£{parseFloat(selectedAccount.available_balance).toFixed(2)}</span>
                         </p>
                     )}
                 </div>

@@ -110,12 +110,13 @@ class TopUpPrepaidView(APIView):
         if card.card_type != 'PREPAID':
             return Response({"error": "Only prepaid cards can be topped up"}, status=400)
 
-        if account.balance < amount:
+        if account.available_balance < amount:
             return Response({"error": "Insufficient funds on the main account"}, status=400)
 
         with transaction.atomic():
             
             account.balance -= amount
+            account.available_balance -= amount
             card.prepaid_balance += amount
             account.save()
             card.save()
@@ -125,7 +126,7 @@ class TopUpPrepaidView(APIView):
                 account=account,
                 amount=-amount,
                 title=f"Top-up Prepaid Card {card.masked_number}",
-                balance_after=account.balance
+                balance_after=account.available_balance
             )
 
             notify(request.user, 'Card topped up',
@@ -134,5 +135,5 @@ class TopUpPrepaidView(APIView):
         return Response({
             "message": "Card topped up successfully", 
             "new_prepaid_balance": card.prepaid_balance,
-            "new_account_balance": account.balance
+            "new_account_balance": account.available_balance
         }, status=200)
