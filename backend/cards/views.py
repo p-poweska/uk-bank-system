@@ -7,13 +7,16 @@ from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from drf_spectacular.utils import extend_schema
+from rest_framework.generics import GenericAPIView
+from .serializers import CardSerializer, SyncCardStatusSerializer
 
 from accounts.models import Account
 from notifications.utils import notify
 from transactions.models import Transaction
 
 from .models import Card
-from .provider_client import issue_card
+from .provider_client import get_card, issue_card
 
 
 class CreateCardView(APIView):
@@ -232,4 +235,75 @@ class TopUpPrepaidView(APIView):
                 "new_account_balance": account.available_balance,
             },
             status=200,
+        )
+
+class SyncCardStatusView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = SyncCardStatusSerializer
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        local_card_id = serializer.validated_data["local_card_id"]
+
+        card = get_object_or_404(Card, id=local_card_id)
+        user_customer = request.user.customer
+
+        if (
+            card.account.customer != user_customer
+            and card.account.customer.parent_customer != user_customer
+        ):
+            return Response(
+                {"error": "Unauthorized"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if not card.external_card_id:
+            return Response(
+                {"error": "Card is not connected to the external card system"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            provider_result = get_card(card.external_card_id)
+        except requests.HTTPError as exc:
+            return Response(
+                {
+                    "error": "Could not fetch card status from external card system",
+                    "details": str(exc),
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except Exception as exc:
+            return Response(
+                {
+                    "error": "Card provider is unavailable",
+                    "details": str(exc),
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        provider_status = provider_result.get("status")
+
+        if provider_status not in Card.CardStatus.values:
+            return Response(
+                {
+                    "error": "External card system returned an unsupported status",
+                    "provider_status": provider_status,
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        card.status = provider_status
+        card.save(update_fields=["status"])
+
+        return Response(
+            {
+                "message": "Card status synchronized",
+                "card_id": card.id,
+                "external_card_id": card.external_card_id,
+                "status": card.status,
+            },
+            status=status.HTTP_200_OK,
         )
