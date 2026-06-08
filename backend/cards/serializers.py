@@ -13,3 +13,12 @@ class CardSerializer(serializers.ModelSerializer):
 
 class SyncCardStatusSerializer(serializers.Serializer):
     local_card_id = serializers.UUIDField()
+
+class ManageCardStatusSerializer(serializers.Serializer):
+    card_id = serializers.UUIDField()
+    status = serializers.ChoiceField(
+        choices=[
+            Card.CardStatus.FROZEN,
+            Card.CardStatus.ACTIVE,
+        ]
+    )

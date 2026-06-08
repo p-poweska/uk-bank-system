@@ -9,14 +9,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
 from rest_framework.generics import GenericAPIView
-from .serializers import CardSerializer, SyncCardStatusSerializer
+from .serializers import CardSerializer, SyncCardStatusSerializer, ManageCardStatusSerializer
 
 from accounts.models import Account
 from notifications.utils import notify
 from transactions.models import Transaction
 
 from .models import Card
-from .provider_client import get_card, issue_card
+from .provider_client import get_card, issue_card, update_card_status
 
 
 class CreateCardView(APIView):
@@ -138,26 +138,95 @@ class CreateCardView(APIView):
         )
 
 
-class CardManageView(APIView):
+class CardManageView(GenericAPIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = ManageCardStatusSerializer
 
     def patch(self, request):
-        card_id = request.data.get("card_id")
-        card = get_object_or_404(Card, id=card_id)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
+        card_id = serializer.validated_data["card_id"]
+        requested_status = serializer.validated_data["status"]
+
+        card = get_object_or_404(Card, id=card_id)
         user_customer = request.user.customer
 
-        if card.account.customer != user_customer and card.account.customer.parent_customer != user_customer:
-            return Response(status=status.HTTP_403_FORBIDDEN)
+        if (
+            card.account.customer != user_customer
+            and card.account.customer.parent_customer != user_customer
+        ):
+            return Response(
+                {"error": "Unauthorized"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
-        new_status = request.data.get("status")
+        if not card.external_card_id:
+            return Response(
+                {"error": "Card is not connected to the external card system"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        if new_status in Card.CardStatus.values:
-            card.status = new_status
-            card.save()
-            return Response({"status": card.status})
+        if requested_status == Card.CardStatus.FROZEN:
+            provider_status = "BLOCKED"
+            reason = "Frozen by customer in bank application"
+            action = "frozen"
+        else:
+            provider_status = "ACTIVE"
+            reason = ""
+            action = "unfrozen"
 
-        return Response(status=status.HTTP_400_BAD_REQUEST)
+        try:
+            provider_result = update_card_status(
+                card_token=card.external_card_id,
+                status=provider_status,
+                reason=reason,
+            )
+        except requests.HTTPError as exc:
+            return Response(
+                {
+                    "error": "Could not update card status in external card system",
+                    "details": str(exc),
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except Exception as exc:
+            return Response(
+                {
+                    "error": "Card provider is unavailable",
+                    "details": str(exc),
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        if not provider_result.get("success"):
+            return Response(
+                {
+                    "error": "External card system rejected the status update",
+                    "details": provider_result.get("message"),
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        card.status = requested_status
+        card.save(update_fields=["status"])
+
+        notify(
+            request.user,
+            "Card status changed",
+            f"Your card {card.masked_number} has been {action}.",
+        )
+
+        return Response(
+            {
+                "message": f"Card successfully {action}",
+                "card_id": str(card.id),
+                "external_card_id": card.external_card_id,
+                "status": card.status,
+                "provider_status": provider_status,
+            },
+            status=status.HTTP_200_OK,
+        )
 
     def delete(self, request):
         card_id = request.data.get("card_id")
@@ -165,13 +234,15 @@ class CardManageView(APIView):
 
         user_customer = request.user.customer
 
-        if card.account.customer != user_customer and card.account.customer.parent_customer != user_customer:
+        if (
+            card.account.customer != user_customer
+            and card.account.customer.parent_customer != user_customer
+        ):
             return Response(status=status.HTTP_403_FORBIDDEN)
 
         card.delete()
 
         return Response(status=status.HTTP_204_NO_CONTENT)
-
 
 class TopUpPrepaidView(APIView):
     permission_classes = [IsAuthenticated]
@@ -286,7 +357,17 @@ class SyncCardStatusView(GenericAPIView):
 
         provider_status = provider_result.get("status")
 
-        if provider_status not in Card.CardStatus.values:
+        provider_to_local_status = {
+            "REQUESTED": Card.CardStatus.REQUESTED,
+            "PRODUCING": Card.CardStatus.PROCESSING,
+            "SHIPPED": Card.CardStatus.SHIPPED,
+            "ACTIVE": Card.CardStatus.ACTIVE,
+            "BLOCKED": Card.CardStatus.FROZEN,
+        }
+
+        local_status = provider_to_local_status.get(provider_status)
+
+        if not local_status:
             return Response(
                 {
                     "error": "External card system returned an unsupported status",
@@ -295,15 +376,16 @@ class SyncCardStatusView(GenericAPIView):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
-        card.status = provider_status
+        card.status = local_status
         card.save(update_fields=["status"])
 
         return Response(
             {
                 "message": "Card status synchronized",
-                "card_id": card.id,
+                "card_id": str(card.id),
                 "external_card_id": card.external_card_id,
                 "status": card.status,
+                "provider_status": provider_status,
             },
             status=status.HTTP_200_OK,
         )
