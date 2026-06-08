@@ -9,14 +9,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
 from rest_framework.generics import GenericAPIView
-from .serializers import CardSerializer, SyncCardStatusSerializer, ManageCardStatusSerializer
+from .serializers import CardSerializer, SyncCardStatusSerializer, ManageCardStatusSerializer, TopUpPrepaidSerializer
 
 from accounts.models import Account
 from notifications.utils import notify
 from transactions.models import Transaction
 
 from .models import Card
-from .provider_client import get_card, issue_card, update_card_status
+from .provider_client import get_card, issue_card, update_card_status, topup_prepaid
 
 
 class CreateCardView(APIView):
@@ -57,7 +57,7 @@ class CreateCardView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        provider_card_type = "VIRTUAL" if card_type == Card.CardType.PREPAID else card_type
+        provider_card_type = card_type
 
         try:
             provider_result = issue_card(
@@ -244,46 +244,101 @@ class CardManageView(GenericAPIView):
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-class TopUpPrepaidView(APIView):
+class TopUpPrepaidView(GenericAPIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = TopUpPrepaidSerializer
 
     def post(self, request):
-        card_id = request.data.get("card_id")
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
 
-        try:
-            amount = Decimal(str(request.data.get("amount", "0")))
-        except Exception:
-            return Response({"error": "Invalid amount"}, status=400)
+        card_id = serializer.validated_data["card_id"]
+        amount = serializer.validated_data["amount"]
 
-        if amount <= 0:
-            return Response({"error": "Amount must be greater than zero"}, status=400)
+        card = get_object_or_404(
+            Card.objects.select_related("account__customer"),
+            id=card_id,
+        )
 
-        card = get_object_or_404(Card, id=card_id)
         account = card.account
         user_customer = request.user.customer
 
-        if account.customer != user_customer and account.customer.parent_customer != user_customer:
-            return Response({"error": "Unauthorized"}, status=403)
+        if (
+            account.customer != user_customer
+            and account.customer.parent_customer != user_customer
+        ):
+            return Response(
+                {"error": "Unauthorized"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         if card.card_type != Card.CardType.PREPAID:
-            return Response({"error": "Only prepaid cards can be topped up"}, status=400)
+            return Response(
+                {"error": "Only prepaid cards can be topped up"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        if account.available_balance < amount:
-            return Response({"error": "Insufficient funds on the main account"}, status=400)
+        if not card.external_card_id:
+            return Response(
+                {"error": "Card is not connected to the external card system"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         with transaction.atomic():
             account = Account.objects.select_for_update().get(id=account.id)
             card = Card.objects.select_for_update().get(id=card.id)
 
             if account.available_balance < amount:
-                return Response({"error": "Insufficient funds on the main account"}, status=400)
+                return Response(
+                    {"error": "Insufficient funds on the main account"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            try:
+                provider_result = topup_prepaid(
+                    card_token=card.external_card_id,
+                    amount=amount,
+                    currency="GBP",
+                )
+            except requests.HTTPError as exc:
+                try:
+                    provider_details = exc.response.json().get("detail")
+                except Exception:
+                    provider_details = str(exc)
+
+                return Response(
+                    {
+                        "error": "External card system rejected the top-up",
+                        "details": provider_details,
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            except Exception as exc:
+                return Response(
+                    {
+                        "error": "Card provider is unavailable",
+                        "details": str(exc),
+                    },
+                    status=status.HTTP_502_BAD_GATEWAY,
+                )
+
+            if not provider_result.get("success"):
+                return Response(
+                    {
+                        "error": "External card system rejected the top-up",
+                        "details": provider_result.get("message"),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            provider_balance = Decimal(str(provider_result["new_balance"]))
 
             account.balance -= amount
             account.available_balance -= amount
-            card.prepaid_balance += amount
+            card.prepaid_balance = provider_balance
 
-            account.save()
-            card.save()
+            account.save(update_fields=["balance", "available_balance"])
+            card.save(update_fields=["prepaid_balance"])
 
             Transaction.objects.create(
                 user=request.user,
@@ -302,10 +357,12 @@ class TopUpPrepaidView(APIView):
         return Response(
             {
                 "message": "Card topped up successfully",
+                "card_id": str(card.id),
+                "external_card_id": card.external_card_id,
                 "new_prepaid_balance": card.prepaid_balance,
                 "new_account_balance": account.available_balance,
             },
-            status=200,
+            status=status.HTTP_200_OK,
         )
 
 class SyncCardStatusView(GenericAPIView):
