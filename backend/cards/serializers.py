@@ -47,3 +47,6 @@ class CardPaymentCaptureSerializer(serializers.Serializer):
         default="",
     )
     card_token = serializers.CharField(max_length=100)
+
+class ActivateCardSerializer(serializers.Serializer):
+    card_id = serializers.UUIDField()

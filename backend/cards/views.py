@@ -9,14 +9,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
 from rest_framework.generics import GenericAPIView
-from .serializers import CardSerializer, SyncCardStatusSerializer, ManageCardStatusSerializer, TopUpPrepaidSerializer, CardPaymentCaptureSerializer
+from .serializers import CardSerializer, SyncCardStatusSerializer, ManageCardStatusSerializer, TopUpPrepaidSerializer, CardPaymentCaptureSerializer, ActivateCardSerializer
 
 from accounts.models import Account
 from notifications.utils import notify
 from transactions.models import Transaction
 
 from .models import Card, CardPaymentCapture
-from .provider_client import get_card, issue_card, update_card_status, topup_prepaid
+from .provider_client import get_card, issue_card, update_card_status, topup_prepaid, activate_card
 
 
 class CreateCardView(APIView):
@@ -579,6 +579,113 @@ class CardPaymentCaptureView(GenericAPIView):
                 "card_id": str(card.id),
                 "new_account_balance": account.available_balance,
                 "new_prepaid_balance": card.prepaid_balance,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+class ActivateCardView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = ActivateCardSerializer
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        card_id = serializer.validated_data["card_id"]
+
+        card = get_object_or_404(Card, id=card_id)
+        user_customer = request.user.customer
+
+        if (
+            card.account.customer != user_customer
+            and card.account.customer.parent_customer != user_customer
+        ):
+            return Response(
+                {"error": "Unauthorized"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if not card.external_card_id:
+            return Response(
+                {
+                    "error":
+                        "Card is not connected to the external card system"
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if card.card_type == Card.CardType.VIRTUAL:
+            return Response(
+                {
+                    "error":
+                        "Virtual cards are activated automatically"
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            provider_result = activate_card(
+                card_token=card.external_card_id,
+            )
+        except requests.HTTPError as exc:
+            try:
+                provider_details = (
+                    exc.response
+                    .json()
+                    .get("detail")
+                )
+            except Exception:
+                provider_details = str(exc)
+
+            return Response(
+                {
+                    "error":
+                        "External card system rejected the activation",
+                    "details":
+                        provider_details,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as exc:
+            return Response(
+                {
+                    "error":
+                        "Card provider is unavailable",
+                    "details":
+                        str(exc),
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        if not provider_result.get("success"):
+            return Response(
+                {
+                    "error":
+                        "External card system rejected the activation",
+                    "details":
+                        provider_result.get("message"),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        card.status = Card.CardStatus.ACTIVE
+        card.save(update_fields=["status"])
+
+        notify(
+            request.user,
+            "Card activated",
+            (
+                f"Your {card.card_type.lower()} card "
+                f"{card.masked_number} has been activated."
+            ),
+        )
+
+        return Response(
+            {
+                "message": "Card activated successfully",
+                "card_id": str(card.id),
+                "external_card_id": card.external_card_id,
+                "status": card.status,
             },
             status=status.HTTP_200_OK,
         )
