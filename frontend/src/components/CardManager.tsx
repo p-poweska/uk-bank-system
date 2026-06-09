@@ -29,6 +29,7 @@ interface Props {
   setBlikDailyLimit: (v: string) => void;
   onSaveLimits: (type: 'CARD' | 'BLIK') => void;
   isSavingLimits: boolean;
+  isCardActionPending: boolean;
 }
 
 const CardManager: React.FC<Props> = ({
@@ -53,6 +54,7 @@ const CardManager: React.FC<Props> = ({
   setBlikDailyLimit,
   onSaveLimits,
   isSavingLimits,
+  isCardActionPending,
 }) => {
   const activeCard = cardsInTab.find((card) => card.id === activeCardId);
   const isJunior = selectedAccount?.account_type === 'JUNIOR';
@@ -62,25 +64,35 @@ const CardManager: React.FC<Props> = ({
     activeCard.card_type !== 'VIRTUAL' &&
     activeCard.status === 'SHIPPING';
 
+  const canToggleFreeze =
+    activeCard &&
+    (
+      activeCard.status === 'ACTIVE' ||
+      activeCard.status === 'FROZEN'
+    );
+
+  const canTopUp =
+    activeCard &&
+    activeCard.card_type === 'PREPAID' &&
+    activeCard.status === 'ACTIVE';
+
   const renderCard = (card: any) => (
     <div
       key={card.id}
       onClick={() => setActiveCardId(card.id)}
       className={`
         w-full max-w-[360px] mx-auto aspect-[1.58/1] rounded-2xl p-4 flex flex-col justify-between shadow-xl cursor-pointer transition-all duration-300
-        border-[2px] ${
-          activeCardId === card.id
-            ? 'border-white shadow-[0_0_20px_rgba(255,255,255,0.15)] scale-[1.02]'
-            : 'border-transparent opacity-60 hover:opacity-100'
+        border-[2px] ${activeCardId === card.id
+          ? 'border-white shadow-[0_0_20px_rgba(255,255,255,0.15)] scale-[1.02]'
+          : 'border-transparent opacity-60 hover:opacity-100'
         }
-        ${
-          card.status === 'FROZEN'
-            ? 'bg-gradient-to-br from-slate-800 to-slate-900'
-            : card.card_type === 'VIRTUAL'
-              ? 'bg-gradient-to-br from-emerald-500 to-teal-700'
-              : card.card_type === 'PHYSICAL'
-                ? 'bg-gradient-to-br from-gray-600 to-gray-800'
-                : 'bg-gradient-to-br from-purple-500 to-indigo-600'
+        ${card.status === 'FROZEN'
+          ? 'bg-gradient-to-br from-slate-800 to-slate-900'
+          : card.card_type === 'VIRTUAL'
+            ? 'bg-gradient-to-br from-emerald-500 to-teal-700'
+            : card.card_type === 'PHYSICAL'
+              ? 'bg-gradient-to-br from-gray-600 to-gray-800'
+              : 'bg-gradient-to-br from-purple-500 to-indigo-600'
         }
       `}
     >
@@ -122,7 +134,8 @@ const CardManager: React.FC<Props> = ({
   const renderAddCard = () => (
     <button
       onClick={onIssueCard}
-      className="w-full max-w-[360px] mx-auto aspect-[1.58/1] border-2 border-dashed border-[var(--border)] rounded-2xl flex flex-col items-center justify-center hover:border-[var(--text-primary)] hover:text-[var(--text-primary)] text-[var(--text-muted)] transition-colors group"
+      disabled={isCardActionPending}
+      className="w-full max-w-[360px] mx-auto aspect-[1.58/1] border-2 border-dashed border-[var(--border)] rounded-2xl flex flex-col items-center justify-center hover:border-[var(--text-primary)] hover:text-[var(--text-primary)] text-[var(--text-muted)] transition-colors group disabled:opacity-40 disabled:cursor-not-allowed"
     >
       <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gray-800 group-hover:bg-white/10 rounded-full flex items-center justify-center mb-2 transition-colors">
         <Plus className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -151,11 +164,10 @@ const CardManager: React.FC<Props> = ({
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
-                  className={`text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] transition-all relative pb-1.5 whitespace-nowrap ${
-                    activeTab === tab
-                      ? 'text-[var(--text-primary)]'
-                      : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
-                  }`}
+                  className={`text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] transition-all relative pb-1.5 whitespace-nowrap ${activeTab === tab
+                    ? 'text-[var(--text-primary)]'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                    }`}
                 >
                   {tab}
 
@@ -193,12 +205,11 @@ const CardManager: React.FC<Props> = ({
           {activeCard?.card_type === 'PREPAID' && (
             <button
               onClick={onTopUpClick}
-              disabled={!activeCard}
-              className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all text-[8px] sm:text-[9px] font-bold uppercase tracking-widest text-center ${
-                activeCard
-                  ? 'bg-[var(--bg-base)] hover:bg-[#00FF85]/10 border-[var(--border)] text-gray-400 hover:text-[#00FF85] cursor-pointer'
-                  : 'bg-[var(--bg-base)]/40 border-[var(--border)] text-[var(--text-muted)] opacity-40 cursor-not-allowed'
-              }`}
+              disabled={!canTopUp || isCardActionPending}
+              className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all text-[8px] sm:text-[9px] font-bold uppercase tracking-widest text-center ${canTopUp && !isCardActionPending
+                ? 'bg-[var(--bg-base)] hover:bg-[#00FF85]/10 border-[var(--border)] text-gray-400 hover:text-[#00FF85] cursor-pointer'
+                : 'bg-[var(--bg-base)]/40 border-[var(--border)] text-[var(--text-muted)] opacity-40 cursor-not-allowed'
+                }`}
             >
               <Plus
                 className="w-4 h-4 sm:w-[16px] sm:h-[16px]"
@@ -211,11 +222,10 @@ const CardManager: React.FC<Props> = ({
           <button
             onClick={onDetails}
             disabled={!activeCard}
-            className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all text-[8px] sm:text-[9px] font-bold uppercase tracking-widest text-center ${
-              activeCard
-                ? 'bg-[var(--bg-base)] hover:bg-white/5 border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer'
-                : 'bg-[var(--bg-base)]/40 border-[var(--border)] text-[var(--text-muted)] opacity-40 cursor-not-allowed'
-            }`}
+            className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all text-[8px] sm:text-[9px] font-bold uppercase tracking-widest text-center ${activeCard
+              ? 'bg-[var(--bg-base)] hover:bg-white/5 border-[var(--border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer'
+              : 'bg-[var(--bg-base)]/40 border-[var(--border)] text-[var(--text-muted)] opacity-40 cursor-not-allowed'
+              }`}
           >
             <Eye
               className="w-4 h-4 sm:w-[16px] sm:h-[16px] text-gray-400"
@@ -232,6 +242,7 @@ const CardManager: React.FC<Props> = ({
           {canActivate && (
             <button
               onClick={onActivate}
+              disabled={isCardActionPending}
               className="p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all text-[8px] sm:text-[9px] font-bold uppercase tracking-widest text-center bg-[var(--bg-base)] hover:bg-[#00FF85]/10 border-[var(--border)] text-gray-400 hover:text-[#00FF85] cursor-pointer"
             >
               <Power className="w-4 h-4 sm:w-[16px] sm:h-[16px]" />
@@ -241,14 +252,13 @@ const CardManager: React.FC<Props> = ({
 
           <button
             onClick={onFreeze}
-            disabled={!activeCard}
-            className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all text-[8px] sm:text-[9px] font-bold uppercase tracking-widest text-center ${
-              activeCard
-                ? activeCard.status === 'FROZEN'
-                  ? 'bg-blue-500/10 border-blue-500/30 text-blue-400'
-                  : 'bg-[var(--bg-base)] hover:bg-white/5 border-[var(--border)] text-gray-400 hover:text-white'
-                : 'bg-[var(--bg-base)]/40 border-[var(--border)] text-[var(--text-muted)] opacity-40 cursor-not-allowed'
-            }`}
+            disabled={!canToggleFreeze || isCardActionPending}
+            className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all text-[8px] sm:text-[9px] font-bold uppercase tracking-widest text-center ${canToggleFreeze && !isCardActionPending
+              ? activeCard.status === 'FROZEN'
+                ? 'bg-blue-500/10 border-blue-500/30 text-blue-400'
+                : 'bg-[var(--bg-base)] hover:bg-white/5 border-[var(--border)] text-gray-400 hover:text-white'
+              : 'bg-[var(--bg-base)]/40 border-[var(--border)] text-[var(--text-muted)] opacity-40 cursor-not-allowed'
+              }`}
           >
             <Snowflake
               className="w-4 h-4 sm:w-[16px] sm:h-[16px]"
@@ -273,19 +283,17 @@ const CardManager: React.FC<Props> = ({
         </h3>
 
         <div
-          className={`flex-1 flex flex-col ${
-            isJunior ? 'justify-center pb-6' : ''
-          } gap-4 sm:gap-5`}
+          className={`flex-1 flex flex-col ${isJunior ? 'justify-center pb-6' : ''
+            } gap-4 sm:gap-5`}
         >
           {/* CARD LIMITS */}
           <div className="bg-[var(--bg-base)] rounded-2xl p-4 sm:p-5 border border-[var(--border)] shadow-inner w-full">
             <div className="flex justify-between items-center mb-4">
               <p
-                className={`text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] px-1 ${
-                  isJunior
-                    ? 'text-purple-400'
-                    : 'text-emerald-400'
-                }`}
+                className={`text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] px-1 ${isJunior
+                  ? 'text-purple-400'
+                  : 'text-emerald-400'
+                  }`}
               >
                 Card Limits
               </p>
@@ -293,11 +301,10 @@ const CardManager: React.FC<Props> = ({
               <button
                 onClick={() => onSaveLimits('CARD')}
                 disabled={isSavingLimits}
-                className={`px-3 py-1.5 rounded-lg text-[8px] sm:text-[9px] font-black uppercase tracking-widest border transition-all shadow-sm ${
-                  isJunior
-                    ? 'bg-purple-500/10 text-purple-400 border-purple-500/20 hover:bg-purple-500/20'
-                    : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
-                }`}
+                className={`px-3 py-1.5 rounded-lg text-[8px] sm:text-[9px] font-black uppercase tracking-widest border transition-all shadow-sm ${isJunior
+                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/20 hover:bg-purple-500/20'
+                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
+                  }`}
               >
                 {isSavingLimits ? '...' : 'Save'}
               </button>

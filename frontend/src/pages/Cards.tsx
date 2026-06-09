@@ -34,6 +34,9 @@ const Cards = () => {
     const [blikDailyLimit, setBlikDailyLimit] = useState('');
     const [isSavingLimits, setIsSavingLimits] = useState(false);
 
+    const [isCardActionPending, setIsCardActionPending] =
+        useState(false);
+
     const refreshData = useCallback(async () => {
         try {
             const response = await api.get('/accounts/');
@@ -168,7 +171,7 @@ const Cards = () => {
     };
 
     const handleToggleFreeze = async () => {
-        if (!activeCardId) {
+        if (!activeCardId || isCardActionPending) {
             return;
         }
 
@@ -185,6 +188,8 @@ const Cards = () => {
                 ? 'ACTIVE'
                 : 'FROZEN';
 
+        setIsCardActionPending(true);
+
         try {
             await api.patch('/cards/manage/', {
                 card_id: activeCardId,
@@ -200,13 +205,17 @@ const Cards = () => {
                 error.response?.data?.error ||
                 'Could not update the card status.',
             );
+        } finally {
+            setIsCardActionPending(false);
         }
     };
 
     const handleActivateCard = async () => {
-        if (!activeCardId) {
+        if (!activeCardId || isCardActionPending) {
             return;
         }
+
+        setIsCardActionPending(true);
 
         try {
             await api.post('/cards/activate/', {
@@ -222,13 +231,17 @@ const Cards = () => {
                 error.response?.data?.error ||
                 'Could not activate the card.',
             );
+        } finally {
+            setIsCardActionPending(false);
         }
     };
 
     const handleIssueCard = async () => {
-        if (!selectedAccount) {
+        if (!selectedAccount || isCardActionPending) {
             return;
         }
+
+        setIsCardActionPending(true);
 
         try {
             await api.post('/cards/create/', {
@@ -245,6 +258,8 @@ const Cards = () => {
                 error.response?.data?.error ||
                 'Could not issue the card.',
             );
+        } finally {
+            setIsCardActionPending(false);
         }
     };
 
@@ -370,6 +385,7 @@ const Cards = () => {
                                 setBlikDailyLimit={setBlikDailyLimit}
                                 onSaveLimits={handleSaveLimits}
                                 isSavingLimits={isSavingLimits}
+                                isCardActionPending={isCardActionPending}
                                 onTopUpClick={() => setIsTopUpModalOpen(true)}
                             />
                         </div>
