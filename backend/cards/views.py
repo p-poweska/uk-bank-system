@@ -10,7 +10,16 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
 from rest_framework.generics import GenericAPIView
-from .serializers import CardSerializer, SyncCardStatusSerializer, ManageCardStatusSerializer, TopUpPrepaidSerializer, CardPaymentCaptureSerializer, ActivateCardSerializer
+from drf_spectacular.utils import extend_schema
+from .serializers import (
+    ActivateCardSerializer,
+    CardPaymentCaptureSerializer,
+    CardSerializer,
+    CreateCardSerializer,
+    ManageCardStatusSerializer,
+    SyncCardStatusSerializer,
+    TopUpPrepaidSerializer,
+)
 
 from accounts.models import Account
 from notifications.utils import notify
@@ -32,12 +41,36 @@ def map_provider_card_status(provider_status: str):
     return PROVIDER_TO_LOCAL_CARD_STATUS.get(provider_status)
 
 
-class CreateCardView(APIView):
+class CreateCardView(GenericAPIView):
     permission_classes = [IsAuthenticated]
+    serializer_class = CreateCardSerializer
 
+    @extend_schema(
+        tags=["Cards"],
+        summary="Issue a new card",
+        description=(
+            "Creates a card in the external card provider "
+            "and saves its local representation in the bank."
+        ),
+    )
     def post(self, request):
-        account_id = request.data.get("account_id")
-        requested_card_type = request.data.get("card_type", Card.CardType.VIRTUAL)
+        serializer = self.get_serializer(
+            data=request.data,
+        )
+
+        serializer.is_valid(
+            raise_exception=True,
+        )
+
+        account_id = serializer.validated_data[
+            "account_id"
+        ]
+
+        requested_card_type = (
+            serializer.validated_data[
+                "card_type"
+            ]
+        )
 
         account = get_object_or_404(Account, id=account_id)
         user_customer = request.user.customer
@@ -155,6 +188,11 @@ class CardManageView(GenericAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = ManageCardStatusSerializer
 
+    @extend_schema(
+    tags=["Cards"],
+    summary="Freeze or unfreeze a card",
+    )
+
     def patch(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -241,25 +279,14 @@ class CardManageView(GenericAPIView):
             status=status.HTTP_200_OK,
         )
 
-    def delete(self, request):
-        card_id = request.data.get("card_id")
-        card = get_object_or_404(Card, id=card_id)
-
-        user_customer = request.user.customer
-
-        if (
-            card.account.customer != user_customer
-            and card.account.customer.parent_customer != user_customer
-        ):
-            return Response(status=status.HTTP_403_FORBIDDEN)
-
-        card.delete()
-
-        return Response(status=status.HTTP_204_NO_CONTENT)
-
 class TopUpPrepaidView(GenericAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = TopUpPrepaidSerializer
+
+    @extend_schema(
+    tags=["Cards"],
+    summary="Top up a prepaid card",
+    )
 
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
@@ -382,6 +409,11 @@ class SyncCardStatusView(GenericAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = SyncCardStatusSerializer
 
+    @extend_schema(
+    tags=["Cards"],
+    summary="Synchronize one card status",
+    )
+
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -455,6 +487,15 @@ class CardPaymentCaptureView(GenericAPIView):
     authentication_classes = []
     permission_classes = [AllowAny]
     serializer_class = CardPaymentCaptureSerializer
+
+    @extend_schema(
+    tags=["Card provider callbacks"],
+    summary="Settle a card payment",
+    description=(
+        "Callback used by the external card provider "
+        "after payment settlement."
+    ),
+)
 
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
@@ -597,6 +638,11 @@ class CardPaymentCaptureView(GenericAPIView):
 class ActivateCardView(GenericAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = ActivateCardSerializer
+    
+    @extend_schema(
+    tags=["Cards"],
+    summary="Activate a shipped card",
+    )
 
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
@@ -703,6 +749,17 @@ class ActivateCardView(GenericAPIView):
 
 class SyncAllCardStatusesView(APIView):
     permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+    tags=["Cards"],
+    summary="Synchronize all card statuses",
+    description=(
+        "Fetches current statuses from the external "
+        "card provider for all cards available to "
+        "the authenticated user."
+    ),
+    request=None,
+)
 
     def post(self, request):
         user_customer = request.user.customer

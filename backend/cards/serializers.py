@@ -50,3 +50,12 @@ class CardPaymentCaptureSerializer(serializers.Serializer):
 
 class ActivateCardSerializer(serializers.Serializer):
     card_id = serializers.UUIDField()
+
+class CreateCardSerializer(serializers.Serializer):
+    account_id = serializers.UUIDField()
+
+    card_type = serializers.ChoiceField(
+        choices=Card.CardType.choices,
+        required=False,
+        default=Card.CardType.VIRTUAL,
+    )
