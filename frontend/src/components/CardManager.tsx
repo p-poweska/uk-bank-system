@@ -4,7 +4,6 @@ import {
   Eye,
   Snowflake,
   ShieldCheck,
-  RefreshCw,
   Power,
 } from 'lucide-react';
 
@@ -17,7 +16,6 @@ interface Props {
   cardsInTab: any[];
   onIssueCard: () => void;
   onFreeze: () => void;
-  onSync: () => void;
   onActivate: () => void;
   onDetails: () => void;
   onTopUpClick: () => void;
@@ -42,7 +40,6 @@ const CardManager: React.FC<Props> = ({
   cardsInTab,
   onIssueCard,
   onFreeze,
-  onSync,
   onActivate,
   onDetails,
   onTopUpClick,
@@ -232,20 +229,6 @@ const CardManager: React.FC<Props> = ({
             />
             Details
           </button>
-
-          <button
-            onClick={onSync}
-            disabled={!activeCard}
-            className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all text-[8px] sm:text-[9px] font-bold uppercase tracking-widest text-center ${
-              activeCard
-                ? 'bg-[var(--bg-base)] hover:bg-cyan-500/10 border-[var(--border)] text-gray-400 hover:text-cyan-400 cursor-pointer'
-                : 'bg-[var(--bg-base)]/40 border-[var(--border)] text-[var(--text-muted)] opacity-40 cursor-not-allowed'
-            }`}
-          >
-            <RefreshCw className="w-4 h-4 sm:w-[16px] sm:h-[16px]" />
-            Sync
-          </button>
-
           {canActivate && (
             <button
               onClick={onActivate}
