@@ -9,8 +9,6 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
 from rest_framework.generics import GenericAPIView
-import hmac
-from django.conf import settings
 from .serializers import CardSerializer, SyncCardStatusSerializer, ManageCardStatusSerializer, TopUpPrepaidSerializer, CardPaymentCaptureSerializer
 
 from accounts.models import Account
@@ -455,19 +453,6 @@ class CardPaymentCaptureView(GenericAPIView):
     serializer_class = CardPaymentCaptureSerializer
 
     def post(self, request):
-        expected_secret = settings.CARD_CAPTURE_SECRET
-        provided_secret = request.headers.get("X-Capture-Secret", "")
-
-        if (
-            not expected_secret
-            or not provided_secret
-            or not hmac.compare_digest(expected_secret, provided_secret)
-        ):
-            return Response(
-                {"error": "Invalid capture secret"},
-                status=status.HTTP_401_UNAUTHORIZED,
-            )
-
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -499,7 +484,6 @@ class CardPaymentCaptureView(GenericAPIView):
             card = (
                 Card.objects
                 .select_for_update()
-                .select_related("account__customer__user")
                 .filter(external_card_id=card_token)
                 .first()
             )
