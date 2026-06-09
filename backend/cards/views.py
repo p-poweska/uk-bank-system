@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 import requests
+from django.db.models import Q
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -17,6 +18,18 @@ from transactions.models import Transaction
 
 from .models import Card, CardPaymentCapture
 from .provider_client import get_card, issue_card, update_card_status, topup_prepaid, activate_card
+
+PROVIDER_TO_LOCAL_CARD_STATUS = {
+    "REQUESTED": Card.CardStatus.REQUESTED,
+    "PRODUCING": Card.CardStatus.PROCESSING,
+    "SHIPPED": Card.CardStatus.SHIPPED,
+    "ACTIVE": Card.CardStatus.ACTIVE,
+    "BLOCKED": Card.CardStatus.FROZEN,
+}
+
+
+def map_provider_card_status(provider_status: str):
+    return PROVIDER_TO_LOCAL_CARD_STATUS.get(provider_status)
 
 
 class CreateCardView(APIView):
@@ -413,16 +426,7 @@ class SyncCardStatusView(GenericAPIView):
             )
 
         provider_status = provider_result.get("status")
-
-        provider_to_local_status = {
-            "REQUESTED": Card.CardStatus.REQUESTED,
-            "PRODUCING": Card.CardStatus.PROCESSING,
-            "SHIPPED": Card.CardStatus.SHIPPED,
-            "ACTIVE": Card.CardStatus.ACTIVE,
-            "BLOCKED": Card.CardStatus.FROZEN,
-        }
-
-        local_status = provider_to_local_status.get(provider_status)
+        local_status = map_provider_card_status(provider_status)
 
         if not local_status:
             return Response(
@@ -686,6 +690,117 @@ class ActivateCardView(GenericAPIView):
                 "card_id": str(card.id),
                 "external_card_id": card.external_card_id,
                 "status": card.status,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+class SyncAllCardStatusesView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user_customer = request.user.customer
+
+        cards = (
+            Card.objects
+            .filter(
+                Q(account__customer=user_customer)
+                | Q(
+                    account__customer__parent_customer=
+                    user_customer
+                )
+            )
+            .exclude(external_card_id__isnull=True)
+            .exclude(external_card_id="")
+            .select_related("account")
+        )
+
+        synchronized_cards = []
+        errors = []
+
+        for card in cards:
+            try:
+                provider_result = get_card(
+                    card.external_card_id
+                )
+
+                provider_status = (
+                    provider_result.get("status")
+                )
+
+                local_status = (
+                    map_provider_card_status(
+                        provider_status
+                    )
+                )
+
+                if not local_status:
+                    errors.append(
+                        {
+                            "card_id": str(card.id),
+                            "external_card_id":
+                                card.external_card_id,
+                            "error":
+                                "Unsupported provider status",
+                            "provider_status":
+                                provider_status,
+                        }
+                    )
+
+                    continue
+
+                if card.status != local_status:
+                    card.status = local_status
+                    card.save(
+                        update_fields=["status"]
+                    )
+
+                synchronized_cards.append(
+                    {
+                        "card_id": str(card.id),
+                        "external_card_id":
+                            card.external_card_id,
+                        "status": card.status,
+                        "provider_status":
+                            provider_status,
+                    }
+                )
+
+            except requests.HTTPError as exc:
+                errors.append(
+                    {
+                        "card_id": str(card.id),
+                        "external_card_id":
+                            card.external_card_id,
+                        "error":
+                            "Could not fetch card status",
+                        "details": str(exc),
+                    }
+                )
+
+            except Exception as exc:
+                errors.append(
+                    {
+                        "card_id": str(card.id),
+                        "external_card_id":
+                            card.external_card_id,
+                        "error":
+                            "Card provider is unavailable",
+                        "details": str(exc),
+                    }
+                )
+
+        return Response(
+            {
+                "message":
+                    "Card statuses synchronization completed",
+                "synchronized_count":
+                    len(synchronized_cards),
+                "error_count":
+                    len(errors),
+                "cards":
+                    synchronized_cards,
+                "errors":
+                    errors,
             },
             status=status.HTTP_200_OK,
         )
