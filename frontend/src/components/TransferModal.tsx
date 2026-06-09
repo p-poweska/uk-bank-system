@@ -99,6 +99,9 @@ const TransferModal: React.FC<TransferModalProps> = ({
     const cleanIban = recipientAccount.replace(/\s+/g, '').toUpperCase();
     const isInternational = cleanIban.length >= 2 && !cleanIban.startsWith('GB');
 
+    const isJuniorUser = accounts.some(acc => acc.account_type === 'JUNIOR');
+    const availableTabs = isJuniorUser ? ['EXTERNAL'] as const : ['EXTERNAL', 'OWN'] as const;
+
     useEffect(() => {
         if (isInternational) {
             setRoutingMethod('SWIFT');
@@ -116,7 +119,9 @@ const TransferModal: React.FC<TransferModalProps> = ({
             setSwiftCode('');
             setTitle('');
             if (prefilled) {
+                if(isJuniorUser){
                 setActiveTab('EXTERNAL');
+                }
                 setRecipientName(prefilled.recipientName);
                 setRecipientAccount(prefilled.recipientAccount);
                 setRoutingMethod(prefilled.routingMethod);
@@ -220,7 +225,7 @@ const TransferModal: React.FC<TransferModalProps> = ({
 
                 {/* Tabs */}
                 <div className={`flex p-1.5 ${t.tabBar} mx-6 mt-6 rounded-2xl border shrink-0`}>
-                    {(['EXTERNAL', 'OWN'] as const).map(tab => (
+                    {availableTabs.map(tab => (
                         <button
                             key={tab}
                             onClick={() => { setActiveTab(tab); setError(''); }}
@@ -272,7 +277,7 @@ const TransferModal: React.FC<TransferModalProps> = ({
                                 {availableFromAccounts.length > 0 ? (
                                     availableFromAccounts.map(acc => (
                                         <option key={acc.id} value={acc.id}>
-                                            {acc.account_type} ({acc.owner_first_name || 'Main'}) · £{formatBalance(acc.balance)}
+                                            {acc.account_type} ({acc.owner_first_name || 'Main'}) · £{formatBalance(acc.available_balance)}
                                         </option>
                                     ))
                                 ) : (
@@ -400,7 +405,7 @@ const TransferModal: React.FC<TransferModalProps> = ({
                                         <option value="">Select target account</option>
                                         {accounts.filter(acc => acc.id !== fromAccountId).map(acc => (
                                             <option key={acc.id} value={acc.id}>
-                                                {acc.account_type} ({acc.owner_first_name || 'Main'}) · £{formatBalance(acc.balance)}
+                                                {acc.account_type} ({acc.owner_first_name || 'Main'}) · £{formatBalance(acc.available_balance)}
                                             </option>
                                         ))}
                                     </select>

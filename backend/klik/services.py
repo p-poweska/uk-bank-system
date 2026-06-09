@@ -28,7 +28,7 @@ def generate_klik_code(user_id: str):
 def confirm_klik_payment(transaction_id, decision: str, reject_reason: str | None = None):
     payload = {
         "transaction_id": str(transaction_id),
-        "decision": decision,
+        "status": decision
     }
 
     if decision == "REJECTED":

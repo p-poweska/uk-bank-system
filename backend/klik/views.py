@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import transaction, models
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -131,20 +131,34 @@ class PendingKlikPaymentsView(APIView):
 
     def get(self, request):
         now = timezone.now()
+        expired_visible_since = now - timezone.timedelta(minutes=5)
 
-        KlikPayment.objects.filter(
+        expired_payments = KlikPayment.objects.filter(
             user=request.user,
             status=KlikPayment.Status.PENDING,
             expiry_time__isnull=False,
             expiry_time__lte=now,
-        ).update(
-            status=KlikPayment.Status.EXPIRED,
-            decided_at=now,
         )
+
+        for payment in expired_payments:
+            payment.status = KlikPayment.Status.EXPIRED
+            payment.decided_at = now
+            payment.save()
+
+            notify(
+                request.user,
+                "KLIK payment expired",
+                f"Payment of {payment.amount} {payment.currency} to {payment.merchant_name} has expired.",
+            )
 
         payments = KlikPayment.objects.filter(
             user=request.user,
-            status=KlikPayment.Status.PENDING,
+        ).filter(
+            models.Q(status=KlikPayment.Status.PENDING) |
+            models.Q(
+                status=KlikPayment.Status.EXPIRED,
+                decided_at__gte=expired_visible_since,
+            )
         ).order_by("-created_at")
 
         return Response([
@@ -185,6 +199,12 @@ class AcceptKlikPaymentView(APIView):
             payment.status = KlikPayment.Status.EXPIRED
             payment.decided_at = timezone.now()
             payment.save()
+
+            notify(
+                request.user,
+                "KLIK payment expired",
+                f"Payment of {payment.amount} {payment.currency} to {payment.merchant_name} has expired",
+            )
 
             return Response(
                 {"error": "KLIK payment has expired."},
@@ -281,6 +301,13 @@ class RejectKlikPaymentView(APIView):
         payment.status = KlikPayment.Status.REJECTED
         payment.decided_at = timezone.now()
         payment.save()
+
+        
+        notify(
+            request.user,
+            "KLIK payment rejected",
+            f"Payment of {payment.amount} {payment.currency} to {payment.merchant_name} was rejected.",
+        )
 
         return Response(result)
 
@@ -444,6 +471,8 @@ class SendKlikP2PView(APIView):
             balance_after=sender_account.available_balance,
         )
 
+        sender_phone = getattr(request.user.customer, "klik_phone_alias", None) or "another KLIK user"
+
         if recipient_account:
             recipient_account.balance += amount
             recipient_account.available_balance += amount
@@ -453,14 +482,14 @@ class SendKlikP2PView(APIView):
                 user=recipient_account.customer.user,
                 account=recipient_account,
                 amount=amount,
-                title=f"KLIK P2P transfer from {request.user.email}",
+                title=f"KLIK P2P transfer from {sender_phone}",
                 balance_after=recipient_account.available_balance,
             )
 
             notify(
                 recipient_account.customer.user,
                 "KLIK P2P transfer received",
-                f"You received {amount} {sender_account.currency} from {request.user.email}.",
+                f"You received {amount} {sender_account.currency} from {sender_phone}.",
             )
 
         notify(

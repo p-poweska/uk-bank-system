@@ -544,6 +544,8 @@ class TopUpPrepaidView(GenericAPIView):
                 {"error": "Card is not connected to the external card system"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if account.available_balance < amount:
+            return Response({"error": "Insufficient funds on the main account"}, status=400)
 
         with transaction.atomic():
             account = Account.objects.select_for_update().get(id=account.id)
@@ -600,6 +602,9 @@ class TopUpPrepaidView(GenericAPIView):
 
             account.save(update_fields=["balance", "available_balance"])
             card.save(update_fields=["prepaid_balance"])
+            card.prepaid_balance += amount
+            account.save()
+            card.save()
 
             Transaction.objects.create(
                 user=request.user,
@@ -921,6 +926,7 @@ class ActivateCardView(GenericAPIView):
                         "Virtual cards are activated automatically"
                 },
                 status=status.HTTP_400_BAD_REQUEST,
+                balance_after=account.available_balance
             )
 
         try:
@@ -1112,3 +1118,8 @@ class SyncAllCardStatusesView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+        return Response({
+            "message": "Card topped up successfully", 
+            "new_prepaid_balance": card.prepaid_balance,
+            "new_account_balance": account.available_balance
+        }, status=200)
