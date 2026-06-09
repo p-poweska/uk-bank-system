@@ -164,3 +164,16 @@ SIMPLE_JWT = {
 KLIK_BASE_URL = os.environ.get("KLIK_BASE_URL", "http://host.docker.internal:8000/api/v1")
 KLIK_BANK_API_KEY = os.environ.get("KLIK_BANK_API_KEY", "CHANGE_ME")
 KLIK_ZONE = os.environ.get("KLIK_ZONE", "UK")
+
+CARD_GATEWAY_BASE_URL = os.environ.get(
+    "CARD_GATEWAY_BASE_URL",
+    "http://host.docker.internal:8072"
+)
+CARD_GATEWAY_API_KEY = os.environ.get(
+    "CARD_GATEWAY_API_KEY",
+    "CHANGE_ME"
+)
+CARD_GATEWAY_HMAC_SECRET = os.environ.get(
+    "CARD_GATEWAY_HMAC_SECRET",
+    "CHANGE_ME"
+)

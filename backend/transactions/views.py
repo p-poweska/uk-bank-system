@@ -24,7 +24,15 @@ class AccountTransactionListView(APIView):
         if account.customer != user_customer and account.customer.parent_customer != user_customer:
             return Response({"error": "Unauthorized"}, status=403)
 
-        qs = account.history.all().order_by('-created_at')
+        qs = (
+            account.history
+            .select_related(
+                "transfer",
+                "card_payment_capture__card",
+            )
+            .all()
+            .order_by("-created_at")
+        )
 
         from_date = request.query_params.get('from')
         to_date = request.query_params.get('to')
@@ -42,7 +50,12 @@ class AccountTransactionListView(APIView):
         search = request.query_params.get('search', '').strip()
         if search:
             qs = qs.filter(
-                Q(title__icontains=search) | Q(transfer__recipient_name__icontains=search)
+                Q(title__icontains=search)
+                | Q(transfer__recipient_name__icontains=search)
+                | Q(
+                    card_payment_capture__merchant_id__icontains=
+                    search
+                )
             )
 
         paginator = TransactionPagination()

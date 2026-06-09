@@ -13,11 +13,11 @@ services:
 
   backend:
     build: ./backend
-    command: python manage.py runserver 0.0.0.0:8001
+    command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - ./backend:/app
     ports:
-      - "8001:8001"
+      - "8001:8000"
     environment:
       - DB_NAME=${POSTGRES_DB}
       - DB_USER=${POSTGRES_USER}
@@ -29,8 +29,18 @@ services:
       - KLIK_BASE_URL=${KLIK_BASE_URL}
       - KLIK_BANK_API_KEY=${KLIK_BANK_API_KEY}
       - KLIK_ZONE=${KLIK_ZONE}
+      - CARD_GATEWAY_BASE_URL=${CARD_GATEWAY_BASE_URL}
+      - CARD_GATEWAY_API_KEY=${CARD_GATEWAY_API_KEY}
+      - CARD_GATEWAY_HMAC_SECRET=${CARD_GATEWAY_HMAC_SECRET}
+      
     depends_on:
       - db
+
+    networks:
+      default:
+      cards-backend:
+        aliases:
+          - uk-bank-a
 
   frontend:
     build: ./frontend
@@ -59,3 +69,8 @@ services:
 
 volumes:
   postgres_data:
+
+networks:
+  cards-backend:
+    external: true
+    name: cards-backend

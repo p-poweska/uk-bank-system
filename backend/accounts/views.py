@@ -9,13 +9,14 @@ from rest_framework import status
 from django.shortcuts import render, get_object_or_404
 from rest_framework.response import Response
 from customers.models import Customer
-from django.db.models import Q
+from django.db.models import Q, Prefetch
 from datetime import datetime, date
 import re
 from limits.models import AccountLimits
 from cards.serializers import CardSerializer
 from transactions.models import Transaction
 from notifications.utils import notify
+from cards.models import Card
 
 class MyAccountsListView(generics.ListAPIView):
     serializer_class = AccountSerializer
@@ -24,9 +25,28 @@ class MyAccountsListView(generics.ListAPIView):
     def get_queryset(self):
         user_customer = self.request.user.customer
 
-        return Account.objects.filter(
-            Q(customer=user_customer) | Q(customer__parent_customer=user_customer)
-        ).order_by('created_at')
+        return (
+            Account.objects
+            .filter(
+                Q(customer=user_customer)
+                |
+                Q(
+                    customer__parent_customer=
+                        user_customer
+                )
+            )
+            .prefetch_related(
+                Prefetch(
+                    "cards",
+                    queryset=Card.objects.filter(
+                        is_archived=False
+                    ),
+                    to_attr="visible_cards",
+                ),
+                "limits",
+            )
+            .order_by("created_at")
+        )
 
 class CreateJuniorAccountView(APIView):
     permission_classes = [IsAuthenticated]

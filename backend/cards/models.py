@@ -56,8 +56,65 @@ class Card(models.Model):
         choices=CardStatus.choices,
         default=CardStatus.ACTIVE
     )
+
+    is_archived = models.BooleanField(
+    default=False,
+    )
     
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return f"{self.card_type} ({self.masked_number}) - {self.status}"
+
+class CardPaymentCapture(models.Model):
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+    )
+
+    card = models.ForeignKey(
+        Card,
+        on_delete=models.CASCADE,
+        related_name="payment_captures",
+    )
+
+    local_transaction = models.OneToOneField(
+        "transactions.Transaction",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="card_payment_capture",
+    )
+
+    provider_transaction_id = models.CharField(
+        max_length=100,
+        unique=True,
+    )
+
+    authorization_code = models.CharField(
+        max_length=100,
+    )
+
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+    )
+
+    currency = models.CharField(
+        max_length=3,
+        default="GBP",
+    )
+
+    merchant_id = models.CharField(
+        max_length=100,
+        blank=True,
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return (
+            f"Capture {self.provider_transaction_id}: "
+            f"{self.amount} {self.currency}"
+        )
