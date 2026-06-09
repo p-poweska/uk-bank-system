@@ -545,10 +545,14 @@ class CardPaymentCaptureView(GenericAPIView):
                     ]
                 )
 
-            transaction_title = (
-                f"Card payment - {merchant_id}"
+            merchant_label = (
+                merchant_id.strip()
                 if merchant_id
-                else "Card payment"
+                else "Unknown merchant"
+            )
+
+            transaction_title = (
+                f"Card payment at {merchant_label}"
             )
 
             local_transaction = Transaction.objects.create(
@@ -572,7 +576,10 @@ class CardPaymentCaptureView(GenericAPIView):
             notify(
                 owner_user,
                 "Card payment settled",
-                f"Card payment of £{amount} has been settled.",
+                (
+                    f"Card payment of £{amount} "
+                    f"at {merchant_label} has been settled."
+                ),
             )
 
         return Response(
