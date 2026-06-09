@@ -4,18 +4,20 @@ import requests
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from drf_spectacular.utils import extend_schema
 from rest_framework.generics import GenericAPIView
-from .serializers import CardSerializer, SyncCardStatusSerializer, ManageCardStatusSerializer, TopUpPrepaidSerializer
+import hmac
+from django.conf import settings
+from .serializers import CardSerializer, SyncCardStatusSerializer, ManageCardStatusSerializer, TopUpPrepaidSerializer, CardPaymentCaptureSerializer
 
 from accounts.models import Account
 from notifications.utils import notify
 from transactions.models import Transaction
 
-from .models import Card
+from .models import Card, CardPaymentCapture
 from .provider_client import get_card, issue_card, update_card_status, topup_prepaid
 
 
@@ -443,6 +445,156 @@ class SyncCardStatusView(GenericAPIView):
                 "external_card_id": card.external_card_id,
                 "status": card.status,
                 "provider_status": provider_status,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+class CardPaymentCaptureView(GenericAPIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+    serializer_class = CardPaymentCaptureSerializer
+
+    def post(self, request):
+        expected_secret = settings.CARD_CAPTURE_SECRET
+        provided_secret = request.headers.get("X-Capture-Secret", "")
+
+        if (
+            not expected_secret
+            or not provided_secret
+            or not hmac.compare_digest(expected_secret, provided_secret)
+        ):
+            return Response(
+                {"error": "Invalid capture secret"},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        provider_transaction_id = serializer.validated_data["transaction_id"]
+        authorization_code = serializer.validated_data["authorization_code"]
+        amount = serializer.validated_data["amount"]
+        currency = serializer.validated_data["currency"]
+        merchant_id = serializer.validated_data["merchant_id"]
+        card_token = serializer.validated_data["card_token"]
+
+        with transaction.atomic():
+            existing_capture = (
+                CardPaymentCapture.objects
+                .select_for_update()
+                .filter(provider_transaction_id=provider_transaction_id)
+                .first()
+            )
+
+            if existing_capture:
+                return Response(
+                    {
+                        "status": "CAPTURED",
+                        "duplicate": True,
+                        "transaction_id": provider_transaction_id,
+                    },
+                    status=status.HTTP_200_OK,
+                )
+
+            card = (
+                Card.objects
+                .select_for_update()
+                .select_related("account__customer__user")
+                .filter(external_card_id=card_token)
+                .first()
+            )
+
+            if not card:
+                return Response(
+                    {"error": "Card not found"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            account = (
+                Account.objects
+                .select_for_update()
+                .get(id=card.account_id)
+            )
+
+            if account.status != Account.AccountStatus.ACTIVE:
+                return Response(
+                    {"error": "Account is not active"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            owner_user = account.customer.user
+
+            if not owner_user:
+                return Response(
+                    {"error": "Card owner does not have a user account"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if card.card_type == Card.CardType.PREPAID:
+                if card.prepaid_balance < amount:
+                    return Response(
+                        {"error": "Insufficient prepaid card balance"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                card.prepaid_balance -= amount
+                card.save(update_fields=["prepaid_balance"])
+
+            else:
+                if account.available_balance < amount:
+                    return Response(
+                        {"error": "Insufficient account balance"},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                account.balance -= amount
+                account.available_balance -= amount
+
+                account.save(
+                    update_fields=[
+                        "balance",
+                        "available_balance",
+                    ]
+                )
+
+            transaction_title = (
+                f"Card payment - {merchant_id}"
+                if merchant_id
+                else "Card payment"
+            )
+
+            local_transaction = Transaction.objects.create(
+                user=owner_user,
+                account=account,
+                amount=-amount,
+                title=transaction_title,
+                balance_after=account.available_balance,
+            )
+
+            CardPaymentCapture.objects.create(
+                card=card,
+                local_transaction=local_transaction,
+                provider_transaction_id=provider_transaction_id,
+                authorization_code=authorization_code,
+                amount=amount,
+                currency=currency,
+                merchant_id=merchant_id,
+            )
+
+            notify(
+                owner_user,
+                "Card payment settled",
+                f"Card payment of £{amount} has been settled.",
+            )
+
+        return Response(
+            {
+                "status": "CAPTURED",
+                "duplicate": False,
+                "transaction_id": provider_transaction_id,
+                "card_id": str(card.id),
+                "new_account_balance": account.available_balance,
+                "new_prepaid_balance": card.prepaid_balance,
             },
             status=status.HTTP_200_OK,
         )

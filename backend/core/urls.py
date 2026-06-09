@@ -19,6 +19,7 @@ from django.urls import path, include
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from users.views import RegisterView, CustomLoginView, CreateJuniorUserView, ChangePasswordView, ChangeEmailView
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
+from cards.views import CardPaymentCaptureView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -30,6 +31,7 @@ urlpatterns = [
     path('api/auth/junior/setup/', CreateJuniorUserView.as_view(), name='junior_setup'),
     path('api/auth/change-password/', ChangePasswordView.as_view(), name='change_password'),
     path('api/auth/change-email/', ChangeEmailView.as_view(), name='change_email'),
+    path("capture",CardPaymentCaptureView.as_view(),name="card-payment-capture"),
 
     # swager
 

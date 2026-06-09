@@ -177,3 +177,8 @@ CARD_GATEWAY_HMAC_SECRET = os.environ.get(
     "CARD_GATEWAY_HMAC_SECRET",
     "CHANGE_ME"
 )
+
+CARD_CAPTURE_SECRET = os.environ.get(
+    "CARD_CAPTURE_SECRET",
+    "",
+)

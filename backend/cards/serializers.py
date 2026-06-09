@@ -30,3 +30,20 @@ class TopUpPrepaidSerializer(serializers.Serializer):
         decimal_places=2,
         min_value=Decimal("0.01"),
     )
+
+class CardPaymentCaptureSerializer(serializers.Serializer):
+    transaction_id = serializers.CharField(max_length=100)
+    authorization_code = serializers.CharField(max_length=100)
+    amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        min_value=Decimal("0.01"),
+    )
+    currency = serializers.CharField(max_length=3)
+    merchant_id = serializers.CharField(
+        max_length=100,
+        required=False,
+        allow_blank=True,
+        default="",
+    )
+    card_token = serializers.CharField(max_length=100)
