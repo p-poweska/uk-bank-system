@@ -6,6 +6,7 @@ from .views import (
     TopUpPrepaidView,
     ActivateCardView,
     SyncAllCardStatusesView,
+    ArchiveCardView,
 )
 
 urlpatterns = [
@@ -15,4 +16,5 @@ urlpatterns = [
     path('cards/sync-status/', SyncCardStatusView.as_view(), name='sync-card-status'),
     path("cards/activate/",ActivateCardView.as_view(),name="activate-card"),
     path("cards/sync-all/",SyncAllCardStatusesView.as_view(),name="sync-all-card-statuses"),
+    path("cards/archive/", ArchiveCardView.as_view(),name="archive-card"),
 ]

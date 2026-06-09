@@ -19,6 +19,7 @@ from .serializers import (
     ManageCardStatusSerializer,
     SyncCardStatusSerializer,
     TopUpPrepaidSerializer,
+    ArchiveCardSerializer,
 )
 
 from accounts.models import Account
@@ -82,7 +83,10 @@ class CreateCardView(GenericAPIView):
             )
 
         if account.account_type == "JUNIOR":
-            if account.cards.filter(card_type=Card.CardType.PREPAID).count() >= 1:
+            if account.cards.filter(
+                card_type=Card.CardType.PREPAID,
+                is_archived=False,
+            ).count() >= 1:
                 return Response(
                     {"error": "Junior can only have 1 Prepaid card."},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -97,7 +101,10 @@ class CreateCardView(GenericAPIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            if account.cards.filter(card_type=card_type).count() >= 2:
+            if account.cards.filter(
+                card_type=card_type,
+                is_archived=False,
+            ).count() >= 2:
                 return Response(
                     {"error": f"You can only have 2 {card_type} cards."},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -201,6 +208,17 @@ class CardManageView(GenericAPIView):
         requested_status = serializer.validated_data["status"]
 
         card = get_object_or_404(Card, id=card_id)
+
+        if card.is_archived:
+            return Response(
+                {
+                    "error":
+                        "Card has been removed from the application"
+                },
+                status=
+                    status.HTTP_400_BAD_REQUEST,
+            )
+
         user_customer = request.user.customer
 
         if (
@@ -279,6 +297,198 @@ class CardManageView(GenericAPIView):
             status=status.HTTP_200_OK,
         )
 
+
+class ArchiveCardView(GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    serializer_class = ArchiveCardSerializer
+
+    @extend_schema(
+    tags=["Cards"],
+    summary="Remove a card from the bank application",
+    description=(
+        "Blocks the card in the external provider and archives "
+        "its local representation. The card remains in the "
+        "database to preserve transaction history."
+    ),
+)
+
+    def post(self, request):
+        serializer = self.get_serializer(
+            data=request.data,
+        )
+
+        serializer.is_valid(
+            raise_exception=True,
+        )
+
+        card_id = serializer.validated_data[
+            "card_id"
+        ]
+
+        card = get_object_or_404(
+            Card.objects.select_related(
+                "account__customer"
+            ),
+            id=card_id,
+        )
+
+        user_customer = request.user.customer
+
+        if (
+            card.account.customer != user_customer
+            and
+            card.account.customer.parent_customer
+            != user_customer
+        ):
+            return Response(
+                {
+                    "error":
+                        "Unauthorized"
+                },
+                status=
+                    status.HTTP_403_FORBIDDEN,
+            )
+
+        if card.is_archived:
+            return Response(
+                {
+                    "message":
+                        "Card is already archived",
+                    "card_id":
+                        str(card.id),
+                    "status":
+                        card.status,
+                    "is_archived":
+                        True,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        if (
+            card.card_type ==
+            Card.CardType.PREPAID
+            and
+            card.prepaid_balance > Decimal("0.00")
+        ):
+            return Response(
+                {
+                    "error":
+                        "Prepaid card balance must be empty before removing the card",
+                    "prepaid_balance":
+                        card.prepaid_balance,
+                },
+                status=
+                    status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not card.external_card_id:
+            return Response(
+                {
+                    "error":
+                        "Card is not connected to the external card system"
+                },
+                status=
+                    status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            provider_card = get_card(
+                card.external_card_id
+            )
+
+            provider_status = (
+                provider_card.get("status")
+            )
+
+            if provider_status != "BLOCKED":
+                provider_result = (
+                    update_card_status(
+                        card_token=
+                            card.external_card_id,
+                        status="BLOCKED",
+                        reason=(
+                            "Removed by customer "
+                            "in bank application"
+                        ),
+                    )
+                )
+
+                if not provider_result.get(
+                    "success"
+                ):
+                    return Response(
+                        {
+                            "error":
+                                "External card system rejected the card removal",
+                            "details":
+                                provider_result.get(
+                                    "message"
+                                ),
+                        },
+                        status=
+                            status.HTTP_502_BAD_GATEWAY,
+                    )
+
+        except requests.HTTPError as exc:
+            return Response(
+                {
+                    "error":
+                        "Could not block card in external card system",
+                    "details":
+                        str(exc),
+                },
+                status=
+                    status.HTTP_502_BAD_GATEWAY,
+            )
+
+        except Exception as exc:
+            return Response(
+                {
+                    "error":
+                        "Card provider is unavailable",
+                    "details":
+                        str(exc),
+                },
+                status=
+                    status.HTTP_502_BAD_GATEWAY,
+            )
+
+        card.status = Card.CardStatus.FROZEN
+        card.is_archived = True
+
+        card.save(
+            update_fields=[
+                "status",
+                "is_archived",
+            ]
+        )
+
+        notify(
+            request.user,
+            "Card removed",
+            (
+                f"Your card {card.masked_number} "
+                "has been blocked and removed "
+                "from the application."
+            ),
+        )
+
+        return Response(
+            {
+                "message":
+                    "Card removed successfully",
+                "card_id":
+                    str(card.id),
+                "status":
+                    card.status,
+                "provider_status":
+                    "BLOCKED",
+                "is_archived":
+                    card.is_archived,
+            },
+            status=status.HTTP_200_OK,
+        )
+
 class TopUpPrepaidView(GenericAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = TopUpPrepaidSerializer
@@ -301,6 +511,17 @@ class TopUpPrepaidView(GenericAPIView):
         )
 
         account = card.account
+
+        if card.is_archived:
+            return Response(
+                {
+                    "error":
+                        "Card has been removed from the application"
+                },
+                status=
+                    status.HTTP_400_BAD_REQUEST,
+            )
+
         user_customer = request.user.customer
 
         if (
@@ -421,6 +642,17 @@ class SyncCardStatusView(GenericAPIView):
         local_card_id = serializer.validated_data["local_card_id"]
 
         card = get_object_or_404(Card, id=local_card_id)
+
+        if card.is_archived:
+            return Response(
+                {
+                    "error":
+                        "Card has been removed from the application"
+                },
+                status=
+                    status.HTTP_400_BAD_REQUEST,
+            )
+
         user_customer = request.user.customer
 
         if (
@@ -651,6 +883,17 @@ class ActivateCardView(GenericAPIView):
         card_id = serializer.validated_data["card_id"]
 
         card = get_object_or_404(Card, id=card_id)
+
+        if card.is_archived:
+            return Response(
+                {
+                    "error":
+                        "Card has been removed from the application"
+                },
+                status=
+                    status.HTTP_400_BAD_REQUEST,
+            )
+
         user_customer = request.user.customer
 
         if (
@@ -771,7 +1014,8 @@ class SyncAllCardStatusesView(APIView):
                 | Q(
                     account__customer__parent_customer=
                     user_customer
-                )
+                ),
+                is_archived=False
             )
             .exclude(external_card_id__isnull=True)
             .exclude(external_card_id="")

@@ -8,7 +8,7 @@ class CardSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'card_type', 'masked_number', 'full_number', 
             'expiry_date', 'cardholder_name', 'status', 
-            'cvv', 'pin', 'prepaid_balance'
+            'cvv', 'pin', 'prepaid_balance',  'is_archived',
         ]
 
 class SyncCardStatusSerializer(serializers.Serializer):
@@ -59,3 +59,6 @@ class CreateCardSerializer(serializers.Serializer):
         required=False,
         default=Card.CardType.VIRTUAL,
     )
+
+class ArchiveCardSerializer(serializers.Serializer):
+    card_id = serializers.UUIDField()

@@ -11,7 +11,7 @@ class AccountSerializer(serializers.ModelSerializer):
 
     limits = serializers.SerializerMethodField()
 
-    cards = CardSerializer(many=True, read_only=True)
+    cards = serializers.SerializerMethodField()
 
     class Meta:
         model = Account
@@ -25,6 +25,23 @@ class AccountSerializer(serializers.ModelSerializer):
             }
             for limit in obj.limits.all()
         }
+
+    def get_cards(self, obj):
+        cards = getattr(
+            obj,
+            "visible_cards",
+            None,
+        )
+
+        if cards is None:
+            cards = obj.cards.filter(
+                is_archived=False
+            )
+
+        return CardSerializer(
+            cards,
+            many=True,
+        ).data
 
 class DepositSerializer(serializers.Serializer):
     amount = serializers.DecimalField(
