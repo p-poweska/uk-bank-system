@@ -5,6 +5,7 @@ import {
   Snowflake,
   ShieldCheck,
   Power,
+  Trash2,
 } from 'lucide-react';
 
 interface Props {
@@ -16,6 +17,7 @@ interface Props {
   cardsInTab: any[];
   onIssueCard: () => void;
   onFreeze: () => void;
+  onRemove: () => void;
   onActivate: () => void;
   onDetails: () => void;
   onTopUpClick: () => void;
@@ -41,6 +43,7 @@ const CardManager: React.FC<Props> = ({
   cardsInTab,
   onIssueCard,
   onFreeze,
+  onRemove,
   onActivate,
   onDetails,
   onTopUpClick,
@@ -75,6 +78,15 @@ const CardManager: React.FC<Props> = ({
     activeCard &&
     activeCard.card_type === 'PREPAID' &&
     activeCard.status === 'ACTIVE';
+
+ 
+  const canRemove =
+  activeCard &&
+  (
+    activeCard.status === 'ACTIVE' ||
+    activeCard.status === 'FROZEN' ||
+    activeCard.status === 'SHIPPING'
+  );
 
   const renderCard = (card: any) => (
     <div
@@ -272,6 +284,17 @@ const CardManager: React.FC<Props> = ({
             {activeCard?.status === 'FROZEN'
               ? 'Unfreeze'
               : 'Freeze'}
+          </button>
+          <button
+            onClick={onRemove}
+            disabled={!canRemove || isCardActionPending}
+            className={`p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1.5 transition-all text-[8px] sm:text-[9px] font-bold uppercase tracking-widest text-center ${canRemove && !isCardActionPending
+                ? 'bg-[var(--bg-base)] hover:bg-red-500/10 border-[var(--border)] text-gray-400 hover:text-red-400 cursor-pointer'
+                : 'bg-[var(--bg-base)]/40 border-[var(--border)] text-[var(--text-muted)] opacity-40 cursor-not-allowed'
+              }`}
+          >
+            <Trash2 className="w-4 h-4 sm:w-[16px] sm:h-[16px]" />
+            Remove
           </button>
         </div>
       </div>

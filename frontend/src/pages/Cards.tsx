@@ -4,6 +4,7 @@ import api from '../api/axios';
 import CardDetailsModal from '../components/CardDetailsModal';
 import CardManager from '../components/CardManager';
 import TopUpModal from '../components/TopUpModal';
+import ConfirmActionModal from '../components/ConfirmActionModal';
 
 interface ContextType {
     firstName: string;
@@ -19,6 +20,7 @@ const Cards = () => {
 
     const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
     const [isTopUpModalOpen, setIsTopUpModalOpen] = useState(false);
+    const [isRemoveModalOpen, setIsRemoveModalOpen] = useState(false);
 
     const [activeTab, setActiveTab] = useState<
         'VIRTUAL' | 'PHYSICAL' | 'PREPAID'
@@ -236,6 +238,35 @@ const Cards = () => {
         }
     };
 
+    const handleArchiveCard = async () => {
+        if (!activeCardId || isCardActionPending) {
+            return;
+        }
+
+        setIsCardActionPending(true);
+
+        try {
+            await api.post('/cards/archive/', {
+                card_id: activeCardId,
+            });
+
+            setIsRemoveModalOpen(false);
+            setActiveCardId(null);
+
+            await refreshData();
+        } catch (error: any) {
+            console.error('Card removal failed:', error);
+
+            alert(
+                error.response?.data?.error ||
+                error.response?.data?.details ||
+                'Could not remove the card.',
+            );
+        } finally {
+            setIsCardActionPending(false);
+        }
+    };
+
     const handleIssueCard = async () => {
         if (!selectedAccount || isCardActionPending) {
             return;
@@ -373,6 +404,7 @@ const Cards = () => {
                                 }
                                 onIssueCard={handleIssueCard}
                                 onFreeze={handleToggleFreeze}
+                                onRemove={() => setIsRemoveModalOpen(true)}
                                 onActivate={handleActivateCard}
                                 onDetails={() => setIsDetailsModalOpen(true)}
                                 txLimit={txLimit}
@@ -408,6 +440,15 @@ const Cards = () => {
                 card={selectedAccount?.cards?.find(
                     (card: any) => card.id === activeCardId,
                 )}
+            />
+
+            <ConfirmActionModal
+                isOpen={isRemoveModalOpen}
+                onClose={() => setIsRemoveModalOpen(false)}
+                onConfirm={handleArchiveCard}
+                loading={isCardActionPending}
+                title="Remove card"
+                message="Are you sure you want to remove this card? It will be blocked and hidden from your account. Any remaining prepaid balance will be lost."
             />
 
             <TopUpModal

@@ -364,22 +364,6 @@ class ArchiveCardView(GenericAPIView):
                 status=status.HTTP_200_OK,
             )
 
-        if (
-            card.card_type ==
-            Card.CardType.PREPAID
-            and
-            card.prepaid_balance > Decimal("0.00")
-        ):
-            return Response(
-                {
-                    "error":
-                        "Prepaid card balance must be empty before removing the card",
-                    "prepaid_balance":
-                        card.prepaid_balance,
-                },
-                status=
-                    status.HTTP_400_BAD_REQUEST,
-            )
 
         if not card.external_card_id:
             return Response(
@@ -463,14 +447,28 @@ class ArchiveCardView(GenericAPIView):
             ]
         )
 
+        forfeited_balance = (
+            card.prepaid_balance
+            if card.card_type == Card.CardType.PREPAID
+            else Decimal("0.00")
+        )
+
+        notification_message = (
+            f"Your card {card.masked_number} "
+            "has been blocked and removed "
+            "from the application."
+        )
+
+        if forfeited_balance > Decimal("0.00"):
+            notification_message += (
+                f" The remaining prepaid balance of "
+                f"£{forfeited_balance} is no longer available."
+            )
+
         notify(
             request.user,
             "Card removed",
-            (
-                f"Your card {card.masked_number} "
-                "has been blocked and removed "
-                "from the application."
-            ),
+            notification_message,
         )
 
         return Response(
@@ -485,6 +483,8 @@ class ArchiveCardView(GenericAPIView):
                     "BLOCKED",
                 "is_archived":
                     card.is_archived,
+                "forfeited_prepaid_balance":
+                    forfeited_balance,
             },
             status=status.HTTP_200_OK,
         )
