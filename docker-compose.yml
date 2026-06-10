@@ -59,6 +59,7 @@ services:
   ukps-listener:
     build: ./backend
     command: python manage.py ukps_listen
+    restart: unless-stopped
     volumes:
       - ./backend:/app
     environment: *backend_env
