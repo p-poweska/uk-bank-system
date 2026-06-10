@@ -98,6 +98,12 @@ const TransferModal: React.FC<TransferModalProps> = ({
 
     const cleanIban = recipientAccount.replace(/\s+/g, '').toUpperCase();
     const isInternational = cleanIban.length >= 2 && !cleanIban.startsWith('GB');
+    // A GB IBAN that is not one of our own (LYOB) accounts is a transfer to
+    // another UK bank — it routes out via FPS/CHAPS/BACS and needs the
+    // recipient bank's BIC, just like an international SWIFT payment does.
+    const isLyoIban = cleanIban.startsWith('GB') && cleanIban.substring(4, 8) === 'LYOB';
+    const isExternalUk = cleanIban.startsWith('GB') && !isLyoIban && cleanIban.length >= 8;
+    const needsBic = isInternational || isExternalUk;
 
     const isJuniorUser = accounts.some(acc => acc.account_type === 'JUNIOR');
     const availableTabs = isJuniorUser ? ['EXTERNAL'] as const : ['EXTERNAL', 'OWN'] as const;
@@ -181,7 +187,7 @@ const TransferModal: React.FC<TransferModalProps> = ({
                     recipient_name: recipientName,
                     recipient_account: cleanIban,
                     routing_method: routingMethod,
-                    swift_bic: isInternational ? swiftCode.trim() : null,
+                    swift_bic: needsBic ? swiftCode.trim() : null,
                     amount: parsedAmount,
                     title,
                 };
@@ -343,25 +349,25 @@ const TransferModal: React.FC<TransferModalProps> = ({
                                         </select>
                                     </div>
 
-                                    {/* SWIFT code */}
-                                    {isInternational && (
+                                    {/* SWIFT / BIC code */}
+                                    {needsBic && (
                                         <div className="animate-fadeIn">
                                             <label className="text-[10px] font-bold text-blue-400 uppercase tracking-widest mb-1.5 block px-1">
-                                                BIC / SWIFT Code
+                                                {isInternational ? 'BIC / SWIFT Code' : 'Recipient Bank BIC'}
                                             </label>
                                             <input
                                                 type="text"
-                                                placeholder="Bank Code"
+                                                placeholder={isInternational ? 'Bank Code' : 'e.g. BARCGB2L'}
                                                 value={swiftCode}
                                                 onChange={e => setSwiftCode(e.target.value.toUpperCase())}
                                                 className={`w-full border rounded-xl px-4 py-3 outline-none transition-colors ${t.inputSwift}`}
-                                                required={isInternational}
+                                                required={needsBic}
                                             />
                                         </div>
                                     )}
 
                                     {/* Amount */}
-                                    <div className={!isInternational ? 'col-span-1' : 'col-span-1 md:col-span-2'}>
+                                    <div className={!needsBic ? 'col-span-1' : 'col-span-1 md:col-span-2'}>
                                         <label className={labelCls}>Amount</label>
                                         <div className="relative">
                                             <span className={`absolute left-4 top-1/2 -translate-y-1/2 font-bold ${t.prefixSymbol}`}>£</span>
