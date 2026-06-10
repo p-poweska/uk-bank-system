@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from rest_framework.views import APIView
@@ -227,7 +228,9 @@ class NationalTransferView(APIView):
             target_acc = Account.objects.filter(iban=recipient_account).first()
 
             if not target_acc:
-                return Response({"error": "External banking networks are not yet connected"}, status=400)
+                # Recipient is at another bank: route out through UK Payment
+                # Systems (CHAPS / FPS / BACS) instead of failing.
+                return self._route_external(request, source_acc, recipient_account, amount, data)
 
             with transaction.atomic():
                 transfer = Transfer.objects.create(
@@ -278,6 +281,92 @@ class NationalTransferView(APIView):
             return Response({"error": "Source account not found"}, status=404)
         except Exception as e:
             return Response({"error": str(e)}, status=400)
+
+    def _route_external(self, request, source_acc, recipient_account, amount, data):
+        """Send a transfer to an external UK bank via UKPS (CHAPS/FPS/BACS)."""
+        from ukps import services as ukps
+        from ukps.models import Scheme
+
+        receiver_bic = (data.get('swift_bic') or '').strip().upper()
+        if not receiver_bic:
+            return Response(
+                {"error": "Recipient bank BIC is required for transfers to other banks."},
+                status=400,
+            )
+
+        scheme = (data.get('routing_method') or 'FPS').upper()
+        if scheme not in (Scheme.CHAPS, Scheme.FPS, Scheme.BACS):
+            scheme = Scheme.FPS
+
+        fps_max = Decimal(str(getattr(settings, 'UKPS_FPS_MAX_AMOUNT', '250000')))
+        if scheme == Scheme.FPS and amount >= fps_max:
+            return Response(
+                {"error": f"FPS payments must be below £{fps_max:,.0f}. Use CHAPS for larger amounts."},
+                status=400,
+            )
+
+        payment = ukps.send_payment(
+            scheme=scheme,
+            receiver_bic=receiver_bic,
+            amount=amount,
+            recipient_account=recipient_account,
+            receiver_sort_code=data.get('recipient_sort_code', ''),
+            reference=data.get('title', 'Transfer'),
+        )
+
+        if payment.status not in ukps.SUCCESS_STATUSES:
+            return Response(
+                {
+                    "error": f"{scheme} payment was not accepted by the network.",
+                    "scheme": scheme,
+                    "ukps_status": payment.status,
+                    "reason": payment.reason_code,
+                },
+                status=502,
+            )
+
+        # SETTLED moves immediately; QUEUED/RECEIVED settle later in the scheme.
+        transfer_status = 'COMPLETED' if payment.status == 'SETTLED' else 'PENDING'
+
+        with transaction.atomic():
+            transfer = Transfer.objects.create(
+                user=request.user,
+                from_account=source_acc,
+                recipient_name=data.get('recipient_name', 'External payee'),
+                recipient_account=recipient_account,
+                swift_bic=receiver_bic,
+                amount=amount,
+                title=data.get('title', 'Transfer'),
+                routing_method=scheme,
+                status=transfer_status,
+            )
+
+            source_acc.balance -= amount
+            source_acc.available_balance -= amount
+            source_acc.save()
+
+            Transaction.objects.create(
+                user=request.user, account=source_acc, transfer=transfer,
+                amount=-amount, title=transfer.title,
+                balance_after=source_acc.available_balance,
+            )
+
+            payment.transfer = transfer
+            payment.save(update_fields=['transfer'])
+
+            notify(request.user, 'Transfer sent',
+                   f'You sent £{amount} to {transfer.recipient_name} via {scheme}.')
+
+        return Response(
+            {
+                "status": "success",
+                "scheme": scheme,
+                "ukps_status": payment.status,
+                "msg_id": payment.msg_id,
+                "external_id": payment.external_id,
+            },
+            status=200,
+        )
 
 
 class JuniorApprovalListView(APIView):
