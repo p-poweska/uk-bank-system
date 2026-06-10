@@ -188,27 +188,22 @@ UKPS_CHAPS_URL = os.environ.get("UKPS_CHAPS_URL", "http://host.docker.internal:8
 UKPS_FPS_URL = os.environ.get("UKPS_FPS_URL", "http://host.docker.internal:8421")
 UKPS_BACS_URL = os.environ.get("UKPS_BACS_URL", "http://host.docker.internal:8422")
 
-# This bank's identity inside UKPS.
-#
-# NOTE: dynamic self-registration (POST /v1/participants/register) is currently
-# broken upstream — the service generates a 67-char API key but the column is
-# VARCHAR(64), so the INSERT fails with 500. Until that is fixed upstream we run
-# under a pre-seeded participant identity using its predefined API key. Set
-# UKPS_AUTO_REGISTER=True to use self-registration once the upstream column is
-# widened.
-UKPS_BANK_BIC = os.environ.get("UKPS_BANK_BIC", "SNDRUK22")
-UKPS_BANK_NAME = os.environ.get("UKPS_BANK_NAME", "Alice Bank")
-UKPS_BANK_SORT_CODE = os.environ.get("UKPS_BANK_SORT_CODE", "60-00-00")
-UKPS_BANK_SU_CODE = os.environ.get("UKPS_BANK_SU_CODE", "SU-ALCE")
+# This bank's own identity inside UKPS. With UKPS_AUTO_REGISTER on, the bank
+# registers itself in each scheme on first use (POST /v1/participants/register)
+# and persists the returned API key, so the per-scheme keys below are blank.
+# To instead run under a pre-seeded BIC, set its key(s) and turn auto-register
+# off (e.g. UKPS_BANK_BIC=SNDRUK22 + UKPS_*_API_KEY=ak_sndruk22_dev).
+UKPS_BANK_BIC = os.environ.get("UKPS_BANK_BIC", "LYOBGB2L")
+UKPS_BANK_NAME = os.environ.get("UKPS_BANK_NAME", "Lyo Bank")
+UKPS_BANK_SORT_CODE = os.environ.get("UKPS_BANK_SORT_CODE", "10-20-30")
+UKPS_BANK_SU_CODE = os.environ.get("UKPS_BANK_SU_CODE", "SU-LYOB")
 UKPS_INITIAL_LIQUIDITY = os.environ.get("UKPS_INITIAL_LIQUIDITY", "1000000")
 
-# Per-scheme API keys for the pre-seeded identity above. Default = Alice Bank
-# seed key, which is the same across all three schemes.
-UKPS_CHAPS_API_KEY = os.environ.get("UKPS_CHAPS_API_KEY", "ak_sndruk22_dev")
-UKPS_FPS_API_KEY = os.environ.get("UKPS_FPS_API_KEY", "ak_sndruk22_dev")
-UKPS_BACS_API_KEY = os.environ.get("UKPS_BACS_API_KEY", "ak_sndruk22_dev")
+UKPS_CHAPS_API_KEY = os.environ.get("UKPS_CHAPS_API_KEY", "")
+UKPS_FPS_API_KEY = os.environ.get("UKPS_FPS_API_KEY", "")
+UKPS_BACS_API_KEY = os.environ.get("UKPS_BACS_API_KEY", "")
 
-UKPS_AUTO_REGISTER = os.environ.get("UKPS_AUTO_REGISTER", "False") == "True"
+UKPS_AUTO_REGISTER = os.environ.get("UKPS_AUTO_REGISTER", "True") == "True"
 
 # FPS is capped at < £250,000 per payment; larger values must use CHAPS.
 UKPS_FPS_MAX_AMOUNT = os.environ.get("UKPS_FPS_MAX_AMOUNT", "250000")
