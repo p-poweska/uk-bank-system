@@ -32,7 +32,19 @@ services:
       - CARD_GATEWAY_BASE_URL=${CARD_GATEWAY_BASE_URL}
       - CARD_GATEWAY_API_KEY=${CARD_GATEWAY_API_KEY}
       - CARD_GATEWAY_HMAC_SECRET=${CARD_GATEWAY_HMAC_SECRET}
-      
+      # UK Payment Systems (CHAPS/FPS/BACS) — reached over the host network.
+      - UKPS_CHAPS_URL=${UKPS_CHAPS_URL:-http://host.docker.internal:8420}
+      - UKPS_FPS_URL=${UKPS_FPS_URL:-http://host.docker.internal:8421}
+      - UKPS_BACS_URL=${UKPS_BACS_URL:-http://host.docker.internal:8422}
+      - UKPS_BANK_BIC=${UKPS_BANK_BIC:-SNDRUK22}
+      - UKPS_BANK_NAME=${UKPS_BANK_NAME:-Alice Bank}
+      - UKPS_BANK_SORT_CODE=${UKPS_BANK_SORT_CODE:-60-00-00}
+      - UKPS_BANK_SU_CODE=${UKPS_BANK_SU_CODE:-SU-ALCE}
+      - UKPS_CHAPS_API_KEY=${UKPS_CHAPS_API_KEY:-ak_sndruk22_dev}
+      - UKPS_FPS_API_KEY=${UKPS_FPS_API_KEY:-ak_sndruk22_dev}
+      - UKPS_BACS_API_KEY=${UKPS_BACS_API_KEY:-ak_sndruk22_dev}
+      - UKPS_AUTO_REGISTER=${UKPS_AUTO_REGISTER:-False}
+
     depends_on:
       - db
 
