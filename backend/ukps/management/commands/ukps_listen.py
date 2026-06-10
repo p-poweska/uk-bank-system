@@ -34,8 +34,17 @@ class Command(BaseCommand):
             t.start()
             threads.append(t)
 
+        # Background safety-net that settles outbound payments which clear
+        # asynchronously (BACS cycles, queued CHAPS/FPS).
+        reconciler = threading.Thread(
+            target=listener.run_reconciler, args=(stop,),
+            name="ukps-reconcile", daemon=True,
+        )
+        reconciler.start()
+        threads.append(reconciler)
+
         self.stdout.write(self.style.SUCCESS(
-            f"UKPS listener started for: {', '.join(schemes)}"
+            f"UKPS listener started for: {', '.join(schemes)} (+ reconciler)"
         ))
         try:
             while any(t.is_alive() for t in threads):

@@ -63,8 +63,37 @@ def handle_event(scheme, event):
             account_number="",
             raw_event=data,
         )
+        # A settled cycle is the moment our queued outbound BACS payments clear.
+        try:
+            services.reconcile_pending()
+        except Exception:
+            logger.exception("UKPS %s: reconcile after cycle.settled failed", scheme)
     else:
         logger.debug("UKPS %s: ignoring event type %r", scheme, etype)
+
+
+def run_reconciler(stop_event=None, interval=30):
+    """Periodically settle/fail outbound payments still pending locally.
+
+    A safety net for BACS (in case a cycle.settled event was missed while
+    disconnected) and for CHAPS/FPS payments that were queued rather than
+    settled on submission.
+    """
+    def stopped():
+        return stop_event is not None and stop_event.is_set()
+
+    while not stopped():
+        close_old_connections()
+        try:
+            res = services.reconcile_pending()
+            if res["completed"] or res["failed"]:
+                logger.info("UKPS reconcile: %s", res)
+        except Exception:
+            logger.exception("UKPS reconcile loop error")
+        for _ in range(interval):
+            if stopped():
+                return
+            time.sleep(1)
 
 
 def run_stream(scheme, stop_event=None):

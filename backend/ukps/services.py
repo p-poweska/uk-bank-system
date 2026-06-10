@@ -346,3 +346,141 @@ def record_inbound(*, scheme, msg_id, sender_bic="", amount=None,
 
     logger.info("Inbound %s %s -> %s [%s]", scheme, msg_id, account_number, inbound.status)
     return inbound, True
+
+
+# --------------------------------------------------------------------------- #
+# Reconciliation of outbound payments that settle asynchronously
+# --------------------------------------------------------------------------- #
+def _finalise_outbound(payment, *, completed: bool, reason: str = ""):
+    """Mark a PENDING outbound payment's transfer COMPLETED or FAILED.
+
+    On failure the sender is refunded, since the funds were debited optimistically
+    when the payment was accepted.
+    """
+    from django.db import transaction as db_tx
+    from transactions.models import Transaction
+    from notifications.utils import notify
+
+    transfer = payment.transfer
+    with db_tx.atomic():
+        payment.status = "SETTLED" if completed else "FAILED"
+        if reason:
+            payment.reason_code = reason[:64]
+        payment.save(update_fields=["status", "reason_code"])
+
+        if not transfer or transfer.status != "PENDING":
+            return
+
+        if completed:
+            transfer.status = "COMPLETED"
+            transfer.save(update_fields=["status"])
+            owner = _account_owner(transfer.from_account)
+            if owner:
+                notify(owner, "Transfer settled",
+                       f"Your £{transfer.amount} {payment.scheme} transfer to "
+                       f"{transfer.recipient_name} has settled.")
+        else:
+            transfer.status = "FAILED"
+            transfer.save(update_fields=["status"])
+            # Refund the optimistic debit.
+            acc = transfer.from_account
+            acc.balance += transfer.amount
+            acc.available_balance += transfer.amount
+            acc.save()
+            owner = _account_owner(acc)
+            if owner:
+                Transaction.objects.create(
+                    user=owner, account=acc, transfer=transfer,
+                    amount=transfer.amount,
+                    title=f"Refund: {payment.scheme} transfer not settled",
+                    balance_after=acc.available_balance,
+                )
+                notify(owner, "Transfer failed",
+                       f"Your £{transfer.amount} {payment.scheme} transfer to "
+                       f"{transfer.recipient_name} could not be settled and was refunded.")
+
+
+def _reconcile_bacs(payment) -> str | None:
+    reg = ensure_registered(Scheme.BACS)
+    headers = {"Authorization": f"Bearer {reg.api_key}"}
+    if not payment.external_id:
+        return None
+
+    sub = requests.get(
+        f"{_base_url(Scheme.BACS)}/v1/payments/bacs/submit/{payment.external_id}",
+        headers=headers, timeout=TIMEOUT,
+    )
+    if sub.status_code != 200:
+        return None
+    sub_body = sub.json()
+    if (sub_body.get("status") or "").upper() == "RECALLED":
+        _finalise_outbound(payment, completed=False, reason="BACS submission recalled")
+        return "failed"
+
+    sub_cycle = sub_body.get("cycle_id")
+    cur = requests.get(
+        f"{_base_url(Scheme.BACS)}/v1/payments/bacs/cycle/current",
+        headers=headers, timeout=TIMEOUT,
+    )
+    # No open cycle (briefly, between close and open) — try again later.
+    if cur.status_code != 200:
+        return None
+    cur_id = cur.json().get("id")
+
+    # The submission's cycle has been superseded by a newer open cycle, so it
+    # has closed and settled.
+    if sub_cycle and cur_id and int(sub_cycle) < int(cur_id):
+        _finalise_outbound(payment, completed=True)
+        return "completed"
+    return None
+
+
+def _reconcile_json(payment) -> str | None:
+    """CHAPS / FPS: look our payment up by msg_id and read its current status."""
+    reg = ensure_registered(payment.scheme)
+    path = "/v1/payments/chaps" if payment.scheme == Scheme.CHAPS else "/v1/payments/fps"
+    resp = requests.get(
+        f"{_base_url(payment.scheme)}{path}",
+        headers={"Authorization": f"Bearer {reg.api_key}"},
+        timeout=TIMEOUT,
+    )
+    if resp.status_code != 200:
+        return None
+    body = resp.json()
+    items = body if isinstance(body, list) else body.get("payments", [])
+    match = next((p for p in items if str(p.get("msg_id")) == payment.msg_id), None)
+    if not match:
+        return None
+    status = (match.get("status") or "").upper()
+    if status in ("ACTC", "SETTLED", "COMPLETED"):
+        _finalise_outbound(payment, completed=True)
+        return "completed"
+    if status in ("RJCT", "REJECTED", "FAILED"):
+        _finalise_outbound(payment, completed=False, reason=f"{payment.scheme} {status}")
+        return "failed"
+    return None
+
+
+def reconcile_pending() -> dict:
+    """Settle/fail outbound payments still PENDING locally that have resolved upstream."""
+    results = {"checked": 0, "completed": 0, "failed": 0}
+    pending = UKPSPayment.objects.filter(
+        status__in=["RECEIVED", "QUEUED"],
+        transfer__status="PENDING",
+    ).select_related("transfer", "transfer__from_account")
+
+    for payment in pending:
+        results["checked"] += 1
+        try:
+            if payment.scheme == Scheme.BACS:
+                outcome = _reconcile_bacs(payment)
+            else:
+                outcome = _reconcile_json(payment)
+        except (requests.RequestException, UKPSError, ValueError) as exc:
+            logger.debug("reconcile %s skipped: %s", payment.msg_id, exc)
+            continue
+        if outcome == "completed":
+            results["completed"] += 1
+        elif outcome == "failed":
+            results["failed"] += 1
+    return results
