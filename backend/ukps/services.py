@@ -265,8 +265,8 @@ def send_payment(*, scheme, receiver_bic, amount, recipient_account="",
             payment.status = "FAILED"
             if not payment.reason_code:
                 payment.reason_code = str(
-                    body.get("error") or resp.status_code
-                )[:64]
+                    body.get("error") or body.get("raw") or resp.status_code
+                ).strip()[:64]
 
     payment.save()
     return payment

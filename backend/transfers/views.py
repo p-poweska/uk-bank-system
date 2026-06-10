@@ -315,9 +315,19 @@ class NationalTransferView(APIView):
         )
 
         if payment.status not in ukps.SUCCESS_STATUSES:
+            reason = payment.reason_code or "the network declined the payment"
+            if "opens at" in reason.lower() or "closed" in reason.lower():
+                message = f"{scheme} is currently closed: {reason}."
+            elif "unavailable" in reason.lower() or reason == "503":
+                message = (
+                    f"{scheme} could not reach the recipient bank. Check that the "
+                    f"BIC '{receiver_bic}' belongs to a participating bank."
+                )
+            else:
+                message = f"{scheme} payment was not accepted: {reason}."
             return Response(
                 {
-                    "error": f"{scheme} payment was not accepted by the network.",
+                    "error": message,
                     "scheme": scheme,
                     "ukps_status": payment.status,
                     "reason": payment.reason_code,
