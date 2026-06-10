@@ -212,3 +212,8 @@ UKPS_AUTO_REGISTER = os.environ.get("UKPS_AUTO_REGISTER", "False") == "True"
 
 # FPS is capped at < £250,000 per payment; larger values must use CHAPS.
 UKPS_FPS_MAX_AMOUNT = os.environ.get("UKPS_FPS_MAX_AMOUNT", "250000")
+
+# Inbound: FPS events carry no destination account (the scheme has no per-account
+# addressing here), so received FPS funds land in this fallback account number.
+# Leave blank to record such payments as UNMATCHED instead of crediting.
+UKPS_INBOUND_FALLBACK_ACCOUNT = os.environ.get("UKPS_INBOUND_FALLBACK_ACCOUNT", "")

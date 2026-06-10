@@ -13,7 +13,7 @@ import requests
 from django.conf import settings
 
 from . import standard18
-from .models import Scheme, UKPSRegistration, UKPSPayment
+from .models import Scheme, UKPSRegistration, UKPSPayment, UKPSInboundPayment
 
 logger = logging.getLogger(__name__)
 
@@ -270,3 +270,79 @@ def send_payment(*, scheme, receiver_bic, amount, recipient_account="",
 
     payment.save()
     return payment
+
+
+# --------------------------------------------------------------------------- #
+# Receiving (inbound)
+# --------------------------------------------------------------------------- #
+def _account_owner(account):
+    owner = account.customer.user
+    if not owner and account.customer.parent_customer:
+        owner = account.customer.parent_customer.user
+    return owner
+
+
+def record_inbound(*, scheme, msg_id, sender_bic="", amount=None,
+                   account_number="", raw_event=None):
+    """Idempotently record a received UKPS payment and credit it if possible.
+
+    Returns (UKPSInboundPayment, created: bool). Dedupes on (scheme, msg_id)
+    because the in-memory SSE bus can redeliver across reconnects.
+    """
+    from django.db import IntegrityError, transaction as db_tx
+    from accounts.models import Account
+    from transactions.models import Transaction
+    from notifications.utils import notify
+
+    scheme = str(scheme).upper()
+
+    existing = UKPSInboundPayment.objects.filter(scheme=scheme, msg_id=msg_id).first()
+    if existing:
+        return existing, False
+
+    amount_dec = Decimal(str(amount)) if amount is not None else None
+
+    try:
+        with db_tx.atomic():
+            account = None
+            if account_number:
+                account = (
+                    Account.objects.select_for_update()
+                    .filter(account_number=account_number).first()
+                )
+
+            if account and amount_dec is not None:
+                status = "CREDITED"
+            elif scheme == Scheme.BACS and amount_dec is None:
+                status = "CYCLE_SETTLED"
+            else:
+                status = "UNMATCHED"
+
+            inbound = UKPSInboundPayment.objects.create(
+                scheme=scheme, msg_id=msg_id, sender_bic=sender_bic or "",
+                amount=amount_dec, account=account,
+                account_number=account_number or "", status=status,
+                raw_event=raw_event,
+            )
+
+            if status == "CREDITED":
+                account.balance += amount_dec
+                account.available_balance += amount_dec
+                account.save()
+
+                owner = _account_owner(account)
+                if owner:
+                    Transaction.objects.create(
+                        user=owner, account=account, amount=amount_dec,
+                        title=f"Inbound {scheme} from {sender_bic or 'bank'}",
+                        balance_after=account.available_balance,
+                    )
+                    notify(owner, "Money received",
+                           f"You received £{amount_dec} via {scheme}.")
+    except IntegrityError:
+        # Lost a race with another delivery of the same event.
+        existing = UKPSInboundPayment.objects.filter(scheme=scheme, msg_id=msg_id).first()
+        return existing, False
+
+    logger.info("Inbound %s %s -> %s [%s]", scheme, msg_id, account_number, inbound.status)
+    return inbound, True

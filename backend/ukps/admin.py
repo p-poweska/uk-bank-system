@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import UKPSRegistration, UKPSPayment
+from .models import UKPSRegistration, UKPSPayment, UKPSInboundPayment
 
 
 @admin.register(UKPSRegistration)
@@ -14,4 +14,12 @@ class UKPSPaymentAdmin(admin.ModelAdmin):
     list_display = ("msg_id", "scheme", "receiver_bic", "amount", "status", "created_at")
     list_filter = ("scheme", "status")
     search_fields = ("msg_id", "receiver_bic", "external_id")
+    readonly_fields = ("created_at",)
+
+
+@admin.register(UKPSInboundPayment)
+class UKPSInboundPaymentAdmin(admin.ModelAdmin):
+    list_display = ("msg_id", "scheme", "sender_bic", "amount", "account_number", "status", "created_at")
+    list_filter = ("scheme", "status")
+    search_fields = ("msg_id", "sender_bic", "account_number")
     readonly_fields = ("created_at",)

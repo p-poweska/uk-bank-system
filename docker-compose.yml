@@ -18,7 +18,7 @@ services:
       - ./backend:/app
     ports:
       - "8001:8000"
-    environment:
+    environment: &backend_env
       - DB_NAME=${POSTGRES_DB}
       - DB_USER=${POSTGRES_USER}
       - DB_PASS=${POSTGRES_PASSWORD}
@@ -44,6 +44,7 @@ services:
       - UKPS_FPS_API_KEY=${UKPS_FPS_API_KEY:-ak_sndruk22_dev}
       - UKPS_BACS_API_KEY=${UKPS_BACS_API_KEY:-ak_sndruk22_dev}
       - UKPS_AUTO_REGISTER=${UKPS_AUTO_REGISTER:-False}
+      - UKPS_INBOUND_FALLBACK_ACCOUNT=${UKPS_INBOUND_FALLBACK_ACCOUNT:-}
 
     depends_on:
       - db
@@ -53,6 +54,17 @@ services:
       cards-backend:
         aliases:
           - uk-bank-a
+
+  # Long-running consumer of inbound CHAPS/FPS/BACS payments (SSE).
+  ukps-listener:
+    build: ./backend
+    command: python manage.py ukps_listen
+    volumes:
+      - ./backend:/app
+    environment: *backend_env
+    depends_on:
+      - db
+      - backend
 
   frontend:
     build: ./frontend

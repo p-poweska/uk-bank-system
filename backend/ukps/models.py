@@ -63,3 +63,38 @@ class UKPSPayment(models.Model):
 
     def __str__(self):
         return f"{self.scheme} {self.msg_id} -> {self.receiver_bic} [{self.status}]"
+
+
+class UKPSInboundPayment(models.Model):
+    """Record of one payment received from UKPS via the SSE listener."""
+
+    STATUS_CHOICES = [
+        ("CREDITED", "Credited"),        # matched a local account and posted
+        ("UNMATCHED", "Unmatched"),      # no local account could be determined
+        ("CYCLE_SETTLED", "Cycle settled"),  # BACS cycle signal, no detail
+    ]
+
+    scheme = models.CharField(max_length=8, choices=Scheme.choices)
+    msg_id = models.CharField(max_length=64, db_index=True)
+    sender_bic = models.CharField(max_length=11, blank=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+
+    account = models.ForeignKey(
+        "accounts.Account",
+        on_delete=models.SET_NULL,
+        related_name="ukps_inbound",
+        null=True,
+        blank=True,
+    )
+    account_number = models.CharField(max_length=34, blank=True)
+
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES)
+    raw_event = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        unique_together = ("scheme", "msg_id")
+
+    def __str__(self):
+        return f"IN {self.scheme} {self.msg_id} £{self.amount} [{self.status}]"
