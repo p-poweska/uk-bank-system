@@ -231,7 +231,7 @@ const Settings = () => {
                             className={`relative w-14 h-7 rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 ${isDark ? 'bg-indigo-600' : 'bg-amber-400'}`}
                             aria-label="Toggle theme"
                         >
-                            <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-transform duration-300 ${isDark ? 'translate-x-0.5' : '-translate-x-7'}`} />
+                            <span className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow-md transition-transform duration-300 ${isDark ? 'translate-x-0.5' : '-translate-x-6.5'}`} />
                         </button>
                     </div>
                     <div className="mt-6 rounded-2xl p-4 flex items-center gap-3 border"
