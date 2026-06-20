@@ -19,6 +19,7 @@ class TransactionSerializer(serializers.ModelSerializer):
 
     transaction_category = serializers.SerializerMethodField()
     card_payment = serializers.SerializerMethodField()
+    swift_transfer = serializers.SerializerMethodField()
 
     class Meta:
         model = Transaction
@@ -35,6 +36,7 @@ class TransactionSerializer(serializers.ModelSerializer):
             "routing_method",
             "transaction_category",
             "card_payment",
+            "swift_transfer",
         ]
 
     def _get_card_payment_capture(self, obj):
@@ -112,4 +114,23 @@ class TransactionSerializer(serializers.ModelSerializer):
             "masked_number": capture.card.masked_number,
             "provider_transaction_id":
                 capture.provider_transaction_id,
+        }
+
+    def get_swift_transfer(self, obj):
+        transfer = obj.transfer
+
+        if not transfer or transfer.routing_method != "SWIFT":
+            return None
+
+        return {
+            "uetr": transfer.swift_uetr,
+            "message_id": transfer.swift_message_id,
+            "receiver_bic": transfer.swift_bic,
+            "sent_amount": str(transfer.sent_amount) if transfer.sent_amount is not None else None,
+            "sent_currency": transfer.sent_currency,
+            "debited_amount": str(transfer.debited_amount) if transfer.debited_amount is not None else None,
+            "debited_currency": transfer.debited_currency,
+            "exchange_rate": str(transfer.exchange_rate) if transfer.exchange_rate is not None else None,
+            "fee_amount": str(transfer.fee_amount) if transfer.fee_amount is not None else None,
+            "charge_bearer": transfer.charge_bearer,
         }

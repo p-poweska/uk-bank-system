@@ -13,7 +13,7 @@ from transactions.models import Transaction
 from django.db.models import Q
 from decimal import Decimal
 from notifications.utils import notify
-
+from . import swift_client
 
 class TransferPagination(PageNumberPagination):
     page_size = 20
@@ -38,6 +38,15 @@ class TransferListView(APIView):
                 'title': t.title,
                 'routing_method': t.routing_method,
                 'status': t.status,
+                 # SWIFT details — null for normal FPS/BACS/CHAPS transfers
+                'swift_uetr': t.swift_uetr,
+                'sent_amount': str(t.sent_amount) if t.sent_amount is not None else None,
+                'sent_currency': t.sent_currency,
+                'debited_amount': str(t.debited_amount) if t.debited_amount is not None else None,
+                'debited_currency': t.debited_currency,
+                'exchange_rate': str(t.exchange_rate) if t.exchange_rate is not None else None,
+                'fee_amount': str(t.fee_amount) if t.fee_amount is not None else None,
+                'charge_bearer': t.charge_bearer,
                 'created_at': t.created_at.isoformat(),
             }
             for t in page
@@ -295,6 +304,10 @@ class NationalTransferView(APIView):
             )
 
         scheme = (data.get('routing_method') or 'FPS').upper()
+
+        if scheme == 'SWIFT':
+            return self._route_swift(request, source_acc, recipient_account, amount, data)
+
         if scheme not in (Scheme.CHAPS, Scheme.FPS, Scheme.BACS):
             scheme = Scheme.FPS
 
@@ -374,6 +387,180 @@ class NationalTransferView(APIView):
                 "ukps_status": payment.status,
                 "msg_id": payment.msg_id,
                 "external_id": payment.external_id,
+            },
+            status=200,
+        )
+
+    def _route_swift(self, request, source_acc, recipient_account, amount, data):
+        """
+        Send an outgoing international payment through the external SWIFT middleware.
+
+        Important:
+        - `amount` is the amount sent to the recipient, e.g. 100 USD.
+        - The sender account is debited in its own currency, usually GBP.
+        - The bank applies a fixed FX rate and a local SWIFT fee.
+        """
+        receiver_bic = (data.get('swift_bic') or '').strip().upper()
+
+        if not receiver_bic:
+            return Response(
+                {"error": "Recipient BIC/SWIFT code is required for SWIFT transfers."},
+                status=400,
+            )
+
+        if receiver_bic == getattr(settings, 'SWIFT_BANK_BIC', 'UKBKGB01XXX'):
+            return Response(
+                {"error": "Use an internal transfer for accounts in this bank."},
+                status=400,
+            )
+
+        source_currency = (source_acc.currency or 'GBP').upper()
+
+        sent_currency = (
+            data.get('transfer_currency')
+            or swift_client.currency_for_bic(receiver_bic)
+            or ''
+        ).upper()
+
+        charge_bearer = swift_client.normalize_charge_bearer(
+            data.get('charge_bearer')
+            or data.get('swift_charge_bearer')
+            or 'SHA'
+        )
+
+        try:
+            pricing = swift_client.calculate_pricing(
+                sent_amount=amount,
+                sent_currency=sent_currency,
+                debited_currency=source_currency,
+                charge_bearer=charge_bearer,
+            )
+        except swift_client.SwiftClientError as exc:
+            return Response({"error": str(exc)}, status=400)
+
+        if source_acc.available_balance < pricing.total_debit:
+            return Response(
+                {
+                    "error": (
+                        f"Insufficient funds. This SWIFT transfer requires "
+                        f"{pricing.total_debit} {pricing.debited_currency} "
+                        f"including a {pricing.fee_amount} {pricing.debited_currency} fee."
+                    ),
+                    "required_amount": str(pricing.total_debit),
+                    "currency": pricing.debited_currency,
+                },
+                status=400,
+            )
+
+        sender_name = (
+            f"{getattr(source_acc.customer, 'first_name', '')} "
+            f"{getattr(source_acc.customer, 'last_name', '')}"
+        ).strip()
+
+        if not sender_name:
+            sender_name = getattr(settings, 'SWIFT_BANK_NAME', 'Lyo Bank')
+
+        try:
+            submission = swift_client.send_payment(
+                sender_name=sender_name,
+                sender_account=source_acc.iban,
+                receiver_name=data.get('recipient_name', 'External payee'),
+                receiver_account=recipient_account,
+                receiver_bic=receiver_bic,
+                amount=pricing.sent_amount,
+                currency=pricing.sent_currency,
+                charge_bearer=pricing.charge_bearer,
+                title=data.get('title', 'SWIFT transfer'),
+            )
+        except swift_client.SwiftClientError as exc:
+            return Response(
+                {
+                    "error": f"SWIFT payment was not accepted: {str(exc)}",
+                    "swift_status": exc.status_code,
+                    "swift_payload": exc.payload,
+                },
+                status=502 if not exc.status_code or exc.status_code >= 500 else 400,
+            )
+
+        with transaction.atomic():
+            locked_source = Account.objects.select_for_update().get(id=source_acc.id)
+
+            if locked_source.available_balance < pricing.total_debit:
+                return Response({"error": "Insufficient funds"}, status=400)
+
+            transfer = Transfer.objects.create(
+                user=request.user,
+                from_account=locked_source,
+                recipient_name=data.get('recipient_name', 'External payee'),
+                recipient_account=recipient_account,
+                swift_bic=receiver_bic,
+                amount=pricing.sent_amount,
+                title=data.get('title', 'SWIFT transfer'),
+                routing_method='SWIFT',
+                status='COMPLETED',
+
+                swift_uetr=submission.uetr,
+                swift_message_id=submission.message_id,
+
+                sent_amount=pricing.sent_amount,
+                sent_currency=pricing.sent_currency,
+
+                debited_amount=pricing.total_debit,
+                debited_currency=pricing.debited_currency,
+
+                exchange_rate=pricing.exchange_rate,
+                fee_amount=pricing.fee_amount,
+                charge_bearer=pricing.charge_bearer,
+            )
+
+            locked_source.balance -= pricing.total_debit
+            locked_source.available_balance -= pricing.total_debit
+            locked_source.save(update_fields=['balance', 'available_balance'])
+
+            Transaction.objects.create(
+                user=request.user,
+                account=locked_source,
+                transfer=transfer,
+                amount=-pricing.total_debit,
+                title=(
+                    f"SWIFT {pricing.sent_amount} {pricing.sent_currency} to "
+                    f"{receiver_bic} — {transfer.title}"
+                ),
+                balance_after=locked_source.available_balance,
+            )
+
+            notify(
+                request.user,
+                'SWIFT transfer submitted',
+                (
+                    f"{pricing.sent_amount} {pricing.sent_currency} was submitted to "
+                    f"{receiver_bic}. Debited {pricing.total_debit} {pricing.debited_currency} "
+                    f"including fee {pricing.fee_amount} {pricing.debited_currency}."
+                ),
+            )
+
+        return Response(
+            {
+                "status": "completed",
+                "scheme": "SWIFT",
+                "swift_status": submission.status,
+                "auto_send_status": submission.auto_send_status,
+                "uetr": submission.uetr,
+                "message_id": submission.message_id,
+                "route": submission.route,
+                "receiver_bank": submission.receiver_bank,
+
+                "sent_amount": str(pricing.sent_amount),
+                "sent_currency": pricing.sent_currency,
+
+                "debited_amount": str(pricing.total_debit),
+                "debited_currency": pricing.debited_currency,
+
+                "exchange_rate": str(pricing.exchange_rate),
+                "fee_amount": str(pricing.fee_amount),
+                "charge_bearer": pricing.charge_bearer,
+
+                "swift_fee_breakdown": submission.fee_breakdown,
             },
             status=200,
         )

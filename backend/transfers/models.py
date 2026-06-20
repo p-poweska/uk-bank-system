@@ -20,7 +20,21 @@ class Transfer(models.Model):
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     title = models.CharField(max_length=255)
     
-    routing_method = models.CharField(max_length=10) 
+    routing_method = models.CharField(max_length=10)
+    # Extra accounting details for outgoing SWIFT transfers.
+    # Domestic FPS/BACS/CHAPS transfers keep these fields empty.
+    swift_uetr = models.CharField(max_length=36, null=True, blank=True, unique=True)
+    swift_message_id = models.CharField(max_length=64, null=True, blank=True)
+
+    sent_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    sent_currency = models.CharField(max_length=3, null=True, blank=True)
+
+    debited_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    debited_currency = models.CharField(max_length=3, null=True, blank=True)
+
+    exchange_rate = models.DecimalField(max_digits=18, decimal_places=8, null=True, blank=True)
+    fee_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    charge_bearer = models.CharField(max_length=4, null=True, blank=True) 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
     created_at = models.DateTimeField(auto_now_add=True)
 
