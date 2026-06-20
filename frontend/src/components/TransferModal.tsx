@@ -105,7 +105,12 @@ const TransferModal: React.FC<TransferModalProps> = ({
     const isExternalUk = cleanIban.startsWith('GB') && !isLyoIban && cleanIban.length >= 8;
     const needsBic = isInternational || isExternalUk;
 
-    const isJuniorUser = accounts.some(acc => acc.account_type === 'JUNIOR');
+    // The accounts list includes a parent's own accounts AND their juniors'
+    // accounts (the API returns both). A junior (child) user only ever has
+    // junior account(s), whereas a parent always keeps their own CURRENT
+    // account — so "every" correctly detects a junior, while "some" wrongly hid
+    // the Own-transfer tab from any parent who created a junior account.
+    const isJuniorUser = accounts.length > 0 && accounts.every(acc => acc.account_type === 'JUNIOR');
     const availableTabs = isJuniorUser ? ['EXTERNAL'] as const : ['EXTERNAL', 'OWN'] as const;
 
     useEffect(() => {
