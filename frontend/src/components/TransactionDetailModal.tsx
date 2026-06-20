@@ -14,6 +14,19 @@ interface CardPaymentDetails {
     provider_transaction_id: string;
 }
 
+interface SwiftTransferDetails {
+    uetr: string | null;
+    message_id: string | null;
+    receiver_bic: string | null;
+    sent_amount: string | null;
+    sent_currency: string | null;
+    debited_amount: string | null;
+    debited_currency: string | null;
+    exchange_rate: string | null;
+    fee_amount: string | null;
+    charge_bearer: string | null;
+}
+
 interface Transaction {
     id: number;
     title: string;
@@ -27,6 +40,7 @@ interface Transaction {
     routing_method: string | null;
     transaction_category?: string | null;
     card_payment?: CardPaymentDetails | null;
+    swift_transfer?: SwiftTransferDetails | null;
 }
 
 interface Props {
@@ -53,6 +67,11 @@ const TransactionDetailModal: React.FC<Props> = ({
         tx.card_payment !== undefined;
 
     const amount = parseFloat(tx.amount);
+
+    const isSwiftTransfer =
+        tx.routing_method === 'SWIFT' &&
+        tx.swift_transfer !== null &&
+        tx.swift_transfer !== undefined;
 
     const formatCurrency = (value: number) =>
         new Intl.NumberFormat('en-GB', {
@@ -207,13 +226,12 @@ const TransactionDetailModal: React.FC<Props> = ({
 
                 <div className="flex flex-col items-center text-center mb-6 pt-2">
                     <div
-                        className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-3 ${
-                            isCardPayment
+                        className={`w-14 h-14 rounded-2xl flex items-center justify-center mb-3 ${isCardPayment
                                 ? 'bg-blue-500/10'
                                 : isCredit
-                                  ? 'bg-emerald-500/10'
-                                  : 'bg-red-500/10'
-                        }`}
+                                    ? 'bg-emerald-500/10'
+                                    : 'bg-red-500/10'
+                            }`}
                     >
                         {isCardPayment ? (
                             <CreditCard
@@ -234,11 +252,10 @@ const TransactionDetailModal: React.FC<Props> = ({
                     </div>
 
                     <p
-                        className={`text-3xl font-black tracking-tight ${
-                            isCredit
+                        className={`text-3xl font-black tracking-tight ${isCredit
                                 ? 'text-emerald-500'
                                 : 'text-red-400'
-                        }`}
+                            }`}
                     >
                         {isCredit ? '+' : '-'}
                         {formattedAmount}
@@ -252,19 +269,18 @@ const TransactionDetailModal: React.FC<Props> = ({
                     </p>
 
                     <span
-                        className={`mt-2 px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                            isCardPayment
+                        className={`mt-2 px-3 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${isCardPayment
                                 ? 'bg-blue-500/20 text-blue-400'
                                 : isCredit
-                                  ? 'bg-emerald-500/20 text-emerald-500'
-                                  : 'bg-red-500/20 text-red-400'
-                        }`}
+                                    ? 'bg-emerald-500/20 text-emerald-500'
+                                    : 'bg-red-500/20 text-red-400'
+                            }`}
                     >
                         {isCardPayment
                             ? 'Card payment'
                             : isCredit
-                              ? 'Money in'
-                              : 'Money out'}
+                                ? 'Money in'
+                                : 'Money out'}
                     </span>
                 </div>
 
@@ -355,6 +371,58 @@ const TransactionDetailModal: React.FC<Props> = ({
                             label="Payment method"
                             value={tx.routing_method}
                         />
+                    )}
+                    {isSwiftTransfer && tx.swift_transfer && (
+                        <>
+                            {tx.swift_transfer.uetr && (
+                                <Row
+                                    label="SWIFT UETR"
+                                    value={tx.swift_transfer.uetr}
+                                />
+                            )}
+
+                            {tx.swift_transfer.receiver_bic && (
+                                <Row
+                                    label="Receiver BIC"
+                                    value={tx.swift_transfer.receiver_bic}
+                                />
+                            )}
+
+                            {tx.swift_transfer.sent_amount && tx.swift_transfer.sent_currency && (
+                                <Row
+                                    label="Sent amount"
+                                    value={`${tx.swift_transfer.sent_amount} ${tx.swift_transfer.sent_currency}`}
+                                />
+                            )}
+
+                            {tx.swift_transfer.debited_amount && tx.swift_transfer.debited_currency && (
+                                <Row
+                                    label="Debited amount"
+                                    value={`${tx.swift_transfer.debited_amount} ${tx.swift_transfer.debited_currency}`}
+                                />
+                            )}
+
+                            {tx.swift_transfer.exchange_rate && (
+                                <Row
+                                    label="Exchange rate"
+                                    value={`1 GBP = ${tx.swift_transfer.exchange_rate} ${tx.swift_transfer.sent_currency || ''}`}
+                                />
+                            )}
+
+                            {tx.swift_transfer.fee_amount && tx.swift_transfer.debited_currency && (
+                                <Row
+                                    label="SWIFT fee"
+                                    value={`${tx.swift_transfer.fee_amount} ${tx.swift_transfer.debited_currency}`}
+                                />
+                            )}
+
+                            {tx.swift_transfer.charge_bearer && (
+                                <Row
+                                    label="Charges"
+                                    value={tx.swift_transfer.charge_bearer}
+                                />
+                            )}
+                        </>
                     )}
                 </div>
 

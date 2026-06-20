@@ -212,3 +212,32 @@ UKPS_FPS_MAX_AMOUNT = os.environ.get("UKPS_FPS_MAX_AMOUNT", "250000")
 # addressing here), so received FPS funds land in this fallback account number.
 # Leave blank to record such payments as UNMATCHED instead of crediting.
 UKPS_INBOUND_FALLBACK_ACCOUNT = os.environ.get("UKPS_INBOUND_FALLBACK_ACCOUNT", "")
+
+
+# ---------------------------------------------------------------------------
+# SWIFT middleware — outgoing international transfers
+# The bank acts as the already existing SWIFT mock bank UKBKGB01XXX.
+# ---------------------------------------------------------------------------
+
+SWIFT_BASE_URL = os.environ.get("SWIFT_BASE_URL", "http://host.docker.internal:3000")
+SWIFT_CLIENT_ID = os.environ.get("SWIFT_CLIENT_ID", "bank-ukbkgb01")
+SWIFT_CLIENT_SECRET = os.environ.get("SWIFT_CLIENT_SECRET", "secret-ukbkgb01")
+SWIFT_BANK_BIC = os.environ.get("SWIFT_BANK_BIC", "UKBKGB01XXX")
+SWIFT_BANK_NAME = os.environ.get("SWIFT_BANK_NAME", "Lyo Bank")
+SWIFT_AUTO_SEND = os.environ.get("SWIFT_AUTO_SEND", "True") == "True"
+SWIFT_TIMEOUT_SECONDS = int(os.environ.get("SWIFT_TIMEOUT_SECONDS", "15"))
+
+# Fixed student-project FX rates.
+# A value means: 1 unit of source currency buys this many units of target currency.
+# Example: 1 GBP = 1.25 USD.
+SWIFT_EXCHANGE_RATES = {
+    ("GBP", "USD"): os.environ.get("SWIFT_RATE_GBP_USD", "1.25"),
+    ("GBP", "EUR"): os.environ.get("SWIFT_RATE_GBP_EUR", "1.15"),
+    ("GBP", "PLN"): os.environ.get("SWIFT_RATE_GBP_PLN", "5.00"),
+    ("GBP", "GBP"): "1.00",
+}
+
+# Local sender-side fees charged by this bank, in sender account currency.
+SWIFT_FEE_OUR_GBP = os.environ.get("SWIFT_FEE_OUR_GBP", "15.00")
+SWIFT_FEE_SHA_GBP = os.environ.get("SWIFT_FEE_SHA_GBP", "5.00")
+SWIFT_FEE_BEN_GBP = os.environ.get("SWIFT_FEE_BEN_GBP", "0.00")
