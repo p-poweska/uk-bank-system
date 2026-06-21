@@ -132,9 +132,8 @@ const TransferModal: React.FC<TransferModalProps> = ({
     // another UK bank — it routes out via FPS/CHAPS/BACS and needs the
     // recipient bank's BIC, just like an international SWIFT payment does.
     const isLyoIban = cleanIban.startsWith('GB') && cleanIban.substring(4, 8) === 'LYOB';
-    const isExternalUk = cleanIban.startsWith('GB') && !isLyoIban && cleanIban.length >= 8;
-    const needsBic = isInternational || isExternalUk;
     const isSwiftTransfer = routingMethod === 'SWIFT' || isInternational;
+    const needsBic = isSwiftTransfer;
 
     const parsedAmountForPreview = parseFloat(amount);
     const swiftPreview = isSwiftTransfer && !isNaN(parsedAmountForPreview) && parsedAmountForPreview > 0

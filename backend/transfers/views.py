@@ -231,15 +231,13 @@ class NationalTransferView(APIView):
 
                 return Response({"status": "pending_approval", "approval_id": approval.id}, status=202)
 
-            if source_acc.available_balance < amount:
-                return Response({"error": "Insufficient funds"}, status=400)
-
             target_acc = Account.objects.filter(iban=recipient_account).first()
 
             if not target_acc:
-                # Recipient is at another bank: route out through UK Payment
-                # Systems (CHAPS / FPS / BACS) instead of failing.
                 return self._route_external(request, source_acc, recipient_account, amount, data)
+
+            if source_acc.available_balance < amount:
+                return Response({"error": "Insufficient funds"}, status=400)
 
             with transaction.atomic():
                 transfer = Transfer.objects.create(
@@ -296,13 +294,6 @@ class NationalTransferView(APIView):
         from ukps import services as ukps
         from ukps.models import Scheme
 
-        receiver_bic = (data.get('swift_bic') or '').strip().upper()
-        if not receiver_bic:
-            return Response(
-                {"error": "Recipient bank BIC is required for transfers to other banks."},
-                status=400,
-            )
-
         scheme = (data.get('routing_method') or 'FPS').upper()
 
         if scheme == 'SWIFT':
@@ -310,6 +301,30 @@ class NationalTransferView(APIView):
 
         if scheme not in (Scheme.CHAPS, Scheme.FPS, Scheme.BACS):
             scheme = Scheme.FPS
+
+        receiver_sort_code = (
+            data.get('recipient_sort_code')
+            or ukps.sort_code_from_iban(recipient_account)
+        )
+
+        receiver_bic = (
+            data.get('receiver_bic')
+            or data.get('swift_bic')
+            or ukps.bic_from_sort_code(receiver_sort_code)
+        )
+
+        receiver_bic = (receiver_bic or '').strip().upper()
+
+        if not receiver_bic:
+            return Response(
+                {
+                    "error": (
+                        "Could not identify recipient bank from the account number. "
+                        "Use a supported UK sort code, for example 20-00-00, 40-00-00, 30-00-00 or 60-00-00."
+                    )
+                },
+                status=400,
+            )
 
         fps_max = Decimal(str(getattr(settings, 'UKPS_FPS_MAX_AMOUNT', '250000')))
         if scheme == Scheme.FPS and amount >= fps_max:
@@ -323,7 +338,7 @@ class NationalTransferView(APIView):
             receiver_bic=receiver_bic,
             amount=amount,
             recipient_account=recipient_account,
-            receiver_sort_code=data.get('recipient_sort_code', ''),
+            receiver_sort_code=receiver_sort_code,
             reference=data.get('title', 'Transfer'),
         )
 
