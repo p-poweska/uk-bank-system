@@ -89,6 +89,7 @@
       cards-backend:
         aliases:
           - uk-bank-a
+      target_klik:
 
   ukps-listener:
     build: ./backend
@@ -141,3 +142,6 @@ networks:
   cards-backend:
     external: true
     name: cards-backend
+  target_klik:
+    external: true
+    name: target_klik
