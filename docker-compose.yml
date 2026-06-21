@@ -33,8 +33,6 @@
       - DB_PASS=${POSTGRES_PASSWORD}
       - DB_HOST=db
       - DB_PORT=5432
-      - SECRET_KEY=${DJANGO_SECRET_KEY}
-      - DEBUG=${DJANGO_DEBUG}
 
       # Auto-created Django admin user
       - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL:-admin@test.com}
@@ -95,10 +93,20 @@
     build: ./backend
     command: >
       sh -c "
-      until python manage.py migrate --check; do
+      until python manage.py migrate --check >/dev/null 2>&1; do
         echo 'Waiting for backend migrations...';
         sleep 2;
       done;
+
+      python manage.py wait_for_ukps --timeout 0 &&
+
+      echo 'Registering bank in UKPS...' &&
+      python manage.py ukps_register &&
+
+      echo 'Current UKPS registration keys:' &&
+      python manage.py ukps_keys &&
+
+      echo 'Starting UKPS listener...' &&
       python manage.py ukps_listen
       "
     restart: unless-stopped

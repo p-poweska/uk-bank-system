@@ -602,9 +602,6 @@ class TopUpPrepaidView(GenericAPIView):
 
             account.save(update_fields=["balance", "available_balance"])
             card.save(update_fields=["prepaid_balance"])
-            card.prepaid_balance += amount
-            account.save()
-            card.save()
 
             Transaction.objects.create(
                 user=request.user,
@@ -926,7 +923,6 @@ class ActivateCardView(GenericAPIView):
                         "Virtual cards are activated automatically"
                 },
                 status=status.HTTP_400_BAD_REQUEST,
-                balance_after=account.available_balance
             )
 
         try:
