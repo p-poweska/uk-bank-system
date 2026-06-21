@@ -15,12 +15,14 @@ Projekt został przygotowany jako środowisko demonstracyjne/edukacyjne. Nie jes
 5. [Konfiguracja `.env`](#5-konfiguracja-env)
 6. [Baza danych i diagram Mermaid](#6-baza-danych-i-diagram-mermaid)
 7. [Logika biznesowa](#7-logika-biznesowa)
-8. [Integracje zewnętrzne](#8-integracje-zewnętrzne)
-9. [Najważniejsze endpointy API](#9-najważniejsze-endpointy-api)
-10. [Komendy administracyjne Django](#10-komendy-administracyjne-django)
-11. [Frontend i widoki aplikacji](#11-frontend-i-widoki-aplikacji)
-12. [Typowe problemy i rozwiązania](#12-typowe-problemy-i-rozwiązania)
-13. [Przykładowe scenariusze testowe](#13-przykładowe-scenariusze-testowe)
+8. [Diagram BPMN — proces obsługi przelewu](#8-diagram-bpmn--proces-obsługi-przelewu)
+9. [Integracje zewnętrzne](#9-integracje-zewnętrzne)
+10. [Najważniejsze endpointy API](#10-najważniejsze-endpointy-api)
+11. [Komendy administracyjne Django](#11-komendy-administracyjne-django)
+12. [Frontend i widoki aplikacji](#12-frontend-i-widoki-aplikacji)
+13. [Typowe problemy i rozwiązania](#13-typowe-problemy-i-rozwiązania)
+14. [Przykładowe scenariusze testowe](#14-przykładowe-scenariusze-testowe)
+15. [Status projektu](#15-status-projektu)
 
 ---
 
@@ -685,9 +687,83 @@ Nie ma limitów przelewów FPS/BACS/CHAPS/SWIFT.
 
 ---
 
-## 8. Integracje zewnętrzne
+## 8. Diagram BPMN — proces obsługi przelewu
 
-### 8.1 UK Payment Systems — CHAPS/FPS/BACS
+Poniższy diagram przedstawia uproszczony proces biznesowy realizacji przelewu w systemie UK Bank. Diagram został przygotowany w formie BPMN-like z podziałem na główne role procesu: klient, frontend, backend banku oraz systemy zewnętrzne. Pokazuje moment walidacji danych, wybór ścieżki przelewu oraz obsługę odpowiedzi z UKPS lub SWIFT.
+
+```mermaid
+flowchart TD
+
+    subgraph CUSTOMER["Klient"]
+        A([Start]) --> B["Wypełnienie formularza przelewu"]
+        B --> C["Zatwierdzenie przelewu"]
+    end
+
+    subgraph FRONTEND["Frontend React"]
+        C --> D["Walidacja formularza"]
+        D --> E["Wysłanie żądania do API"]
+    end
+
+    subgraph BACKEND["Backend Django"]
+        E --> F["Odczyt konta źródłowego"]
+        F --> G{"Czy konto jest aktywne?"}
+
+        G -- "Nie" --> X1["Błąd: konto nieaktywne"]
+        X1 --> END1([Koniec])
+
+        G -- "Tak" --> H{"Czy odbiorca jest w tym samym banku?"}
+
+        H -- "Tak" --> I["Przelew wewnętrzny"]
+        I --> J["Aktualizacja sald kont"]
+        J --> K["Zapis transakcji"]
+        K --> L["Zwrócenie statusu COMPLETED"]
+        L --> END2([Koniec])
+
+        H -- "Nie" --> M{"Jaki kanał płatności?"}
+
+        M -- "FPS / BACS / CHAPS" --> N["Wyznaczenie sort code i BIC odbiorcy"]
+        N --> O["Sprawdzenie dostępnego salda"]
+        O --> P{"Czy saldo wystarczające?"}
+
+        P -- "Nie" --> X2["Błąd: brak środków"]
+        X2 --> END3([Koniec])
+
+        P -- "Tak" --> Q["Wysłanie płatności do UKPS"]
+
+        M -- "SWIFT" --> R["Walidacja BIC, waluty i danych SWIFT"]
+        R --> S["Przeliczenie waluty i naliczenie prowizji"]
+        S --> T{"Czy saldo wystarczające?"}
+
+        T -- "Nie" --> X3["Błąd: brak środków"]
+        X3 --> END4([Koniec])
+
+        T -- "Tak" --> U["Wysłanie płatności do SWIFT middleware"]
+    end
+
+    subgraph EXTERNAL["Systemy zewnętrzne"]
+        Q --> V{"Odpowiedź UKPS"}
+        U --> W{"Odpowiedź SWIFT"}
+    end
+
+    V -- "Przyjęto" --> Y1["Zapis płatności UKPS i aktualizacja salda"]
+    V -- "Odrzucono" --> X4["Zwrócenie błędu UKPS"]
+
+    W -- "Przyjęto" --> Y2["Zapis płatności SWIFT i aktualizacja salda"]
+    W -- "Odrzucono" --> X5["Zwrócenie błędu SWIFT"]
+
+    Y1 --> END5([Koniec])
+    Y2 --> END6([Koniec])
+    X4 --> END7([Koniec])
+    X5 --> END8([Koniec])
+```
+
+Diagram pokazuje, że przelew wewnętrzny jest realizowany bez systemów zewnętrznych, przelewy krajowe UK są kierowane przez UKPS, a przelewy zagraniczne przez SWIFT. Dzięki temu backend nie traktuje wszystkich płatności jednakowo — sposób obsługi zależy od rachunku odbiorcy oraz wybranego kanału routingu.
+
+---
+
+## 9. Integracje zewnętrzne
+
+### 9.1 UK Payment Systems — CHAPS/FPS/BACS
 
 Bank integruje się z trzema usługami UKPS:
 
@@ -716,7 +792,7 @@ UKPS_BANK_SU_CODE=SU-LYOB
 
 Dzięki temu bank sam rejestruje się w zewnętrznym systemie płatniczym.
 
-### 8.2 Problem ponownej rejestracji UKPS
+### 9.2 Problem ponownej rejestracji UKPS
 
 Jeżeli wyczyszczono bazę banku przez:
 
@@ -739,7 +815,7 @@ UKPS_BACS_API_KEY=...
 
 Bank potrafi wtedy odtworzyć lokalne wpisy `UKPSRegistration` na podstawie `.env`.
 
-### 8.3 SWIFT middleware
+### 9.3 SWIFT middleware
 
 Bank działa jako istniejący uczestnik SWIFT:
 
@@ -751,7 +827,7 @@ SWIFT_BANK_BIC=UKBKGB01XXX
 
 Obsługiwane jest wysyłanie przelewów wychodzących. Odbiór przelewów SWIFT nie jest realizowany bezpośrednio przez Django, ponieważ zewnętrzny middleware ma statycznie skonfigurowane mock banki.
 
-### 8.4 Card gateway/provider
+### 9.4 Card gateway/provider
 
 Konfiguracja:
 
@@ -776,7 +852,7 @@ Callback płatności kartą:
 POST http://localhost:8001/capture
 ```
 
-### 8.5 KLIK/BLIK-like payments
+### 9.5 KLIK/BLIK-like payments
 
 Konfiguracja:
 
@@ -802,7 +878,7 @@ http://host.docker.internal:8001/api/klik/webhook/authorize
 
 ---
 
-## 9. Najważniejsze endpointy API
+## 10. Najważniejsze endpointy API
 
 Wszystkie endpointy API aplikacji bankowej są dostępne pod prefiksem:
 
@@ -816,7 +892,7 @@ Autoryzacja dla endpointów chronionych:
 Authorization: Bearer <access_token>
 ```
 
-### 9.1 Auth
+### 10.1 Auth
 
 | Metoda | Endpoint | Opis |
 |---|---|---|
@@ -828,7 +904,7 @@ Authorization: Bearer <access_token>
 | `POST` | `/api/auth/change-email/` | zmiana e-maila |
 | `POST` | `/api/auth/logout/` | wylogowanie po stronie aplikacji |
 
-### 9.2 Profil klienta
+### 10.2 Profil klienta
 
 | Metoda | Endpoint | Opis |
 |---|---|---|
@@ -836,7 +912,7 @@ Authorization: Bearer <access_token>
 | `GET` | `/api/setup/status/` | sprawdzenie, czy profil jest skonfigurowany |
 | `GET` | `/api/me/` | dane aktualnego klienta |
 
-### 9.3 Rachunki i limity
+### 10.3 Rachunki i limity
 
 | Metoda | Endpoint | Opis |
 |---|---|---|
@@ -878,7 +954,7 @@ Przykład aktualizacji limitu KLIK phone transfer:
 }
 ```
 
-### 9.4 Przelewy i odbiorcy
+### 10.4 Przelewy i odbiorcy
 
 | Metoda | Endpoint | Opis |
 |---|---|---|
@@ -918,7 +994,7 @@ Przykład SWIFT:
 }
 ```
 
-### 9.5 Junior approvals
+### 10.5 Junior approvals
 
 | Metoda | Endpoint | Opis |
 |---|---|---|
@@ -934,7 +1010,7 @@ Przykład decyzji:
 }
 ```
 
-### 9.6 Karty
+### 10.6 Karty
 
 | Metoda | Endpoint | Opis |
 |---|---|---|
@@ -974,7 +1050,7 @@ Przykład top-up prepaid:
 }
 ```
 
-### 9.7 KLIK/BLIK-like
+### 10.7 KLIK/BLIK-like
 
 | Metoda | Endpoint | Opis |
 |---|---|---|
@@ -997,7 +1073,7 @@ Przykład P2P:
 }
 ```
 
-### 9.8 Transakcje, analytics i powiadomienia
+### 10.8 Transakcje, analytics i powiadomienia
 
 | Metoda | Endpoint | Opis |
 |---|---|---|
@@ -1007,7 +1083,7 @@ Przykład P2P:
 | `POST` | `/api/notifications/read-all/` | oznaczenie wszystkich jako przeczytane |
 | `POST` | `/api/notifications/{id}/read/` | oznaczenie jednego jako przeczytane |
 
-### 9.9 Dokumentacja API
+### 10.9 Dokumentacja API
 
 | Metoda | Endpoint | Opis |
 |---|---|---|
@@ -1016,7 +1092,7 @@ Przykład P2P:
 
 ---
 
-## 10. Komendy administracyjne Django
+## 11. Komendy administracyjne Django
 
 Komendy można uruchamiać w kontenerze backendu:
 
@@ -1049,7 +1125,7 @@ docker compose exec backend python manage.py shell
 
 ---
 
-## 11. Frontend i widoki aplikacji
+## 12. Frontend i widoki aplikacji
 
 Aplikacja React działa pod:
 
@@ -1087,7 +1163,7 @@ Widoki junior:
 
 ---
 
-## 12. Typowe problemy i rozwiązania
+## 13. Typowe problemy i rozwiązania
 
 ### Brak sieci `cards-backend`
 
@@ -1172,9 +1248,9 @@ Po zmianie `.env` zrestartuj frontend.
 
 ---
 
-## 13. Przykładowe scenariusze testowe
+## 14. Przykładowe scenariusze testowe
 
-### 13.1 Start projektu
+### 14.1 Start projektu
 
 ```bash
 docker network create cards-backend
@@ -1200,19 +1276,19 @@ Dane:
 admin@test.com / admin123
 ```
 
-### 13.2 Sprawdzenie backendu
+### 14.2 Sprawdzenie backendu
 
 ```bash
 docker compose exec backend python manage.py check
 ```
 
-### 13.3 Sprawdzenie UKPS
+### 14.3 Sprawdzenie UKPS
 
 ```bash
 docker compose exec backend python manage.py ukps_keys
 ```
 
-### 13.4 Test FPS
+### 14.4 Test FPS
 
 Przykładowy odbiorca:
 
@@ -1233,7 +1309,7 @@ sort code: 20-00-00
 BIC: BARCGB2L
 ```
 
-### 13.5 Test BACS
+### 14.5 Test BACS
 
 Przykładowy odbiorca:
 
@@ -1249,11 +1325,11 @@ BACS
 
 Bank powinien wysłać płatność do BACS jako plik Standard 18.
 
-### 13.6 Test CHAPS po cutoffie
+### 14.6 Test CHAPS po cutoffie
 
 Po godzinie granicznej CHAPS system może zwrócić komunikat, że płatność nie została przyjęta. Frontend pokazuje błąd użytkownikowi, np. że minął cutoff i należy użyć FPS albo spróbować następnego dnia roboczego.
 
-### 13.7 Test SWIFT
+### 14.7 Test SWIFT
 
 Przykładowe dane:
 
@@ -1267,7 +1343,7 @@ charge bearer: SHA
 
 Bank wyliczy debet w GBP i zapisze szczegóły SWIFT w modelu `Transfer`.
 
-### 13.8 Test kart
+### 14.8 Test kart
 
 1. Wejdź w `/cards`.
 2. Utwórz kartę `VIRTUAL`, `PHYSICAL` albo `PREPAID`.
@@ -1275,7 +1351,7 @@ Bank wyliczy debet w GBP i zapisze szczegóły SWIFT w modelu `Transfer`.
 4. Dla prepaid wykonaj top-up.
 5. W `/limits` ustaw limit konkretnej karty.
 
-### 13.9 Test KLIK
+### 14.9 Test KLIK
 
 1. Wejdź w `/klik`.
 2. Zarejestruj alias telefonu.
@@ -1288,7 +1364,7 @@ Bank wyliczy debet w GBP i zapisze szczegóły SWIFT w modelu `Transfer`.
 
 ---
 
-## 14. Status projektu
+## 15. Status projektu
 
 Aktualnie projekt obsługuje:
 
