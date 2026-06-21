@@ -159,7 +159,8 @@ const Accounts = () => {
                 {/* RIGHT: account details */}
                 <div className="flex-1 flex flex-col h-full pr-2 pb-6 w-full">
                     {selectedAccount ? (
-                        <div className="flex flex-col gap-4 animate-fadeIn max-w-2xl w-full">
+                        // ZMIANA: Dodano `mx-auto`, aby wyśrodkować panel. Zmieniono `max-w-2xl` na `max-w-3xl` dla lepszych proporcji.
+                        <div className="flex flex-col gap-4 animate-fadeIn max-w-3xl w-full mx-auto">
 
                             {/* Balance header */}
                             <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-3xl p-5 sm:p-6 shadow-lg">
@@ -209,29 +210,6 @@ const Accounts = () => {
                                     </div>
                                 </div>
                             </div>
-
-                            {/* Manage cards shortcut */}
-                            <button
-                                onClick={() => navigate('/cards')}
-                                className="flex items-center justify-between gap-4 p-4 sm:p-5 rounded-3xl transition-all group"
-                                style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border)' }}
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-emerald-500/10 text-emerald-400 group-hover:bg-emerald-500/20 transition-colors">
-                                        <CreditCard size={20} />
-                                    </div>
-                                    <div className="text-left">
-                                        <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Manage Cards</p>
-                                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                            {selectedAccount.cards?.length || 0} card{selectedAccount.cards?.length !== 1 ? 's' : ''} · Virtual, Physical, Prepaid
-                                        </p>
-                                    </div>
-                                </div>
-                                <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" style={{ color: 'var(--text-muted)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                </svg>
-                            </button>
-
                         </div>
                     ) : (
                         <div className="text-center p-20" style={{ color: 'var(--text-muted)' }}>No account selected.</div>

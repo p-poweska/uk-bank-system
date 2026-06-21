@@ -30,11 +30,6 @@ const Cards = () => {
         null,
     );
 
-    const [txLimit, setTxLimit] = useState('');
-    const [dailyLimit, setDailyLimit] = useState('');
-    const [blikTxLimit, setBlikTxLimit] = useState('');
-    const [blikDailyLimit, setBlikDailyLimit] = useState('');
-    const [isSavingLimits, setIsSavingLimits] = useState(false);
 
     const [isCardActionPending, setIsCardActionPending] =
         useState(false);
@@ -114,27 +109,6 @@ const Cards = () => {
         if (!selectedAccount) {
             return;
         }
-
-        setTxLimit(
-            selectedAccount.limits?.CARD?.per_transaction_limit ||
-            '0.00',
-        );
-
-        setDailyLimit(
-            selectedAccount.limits?.CARD?.daily_limit ||
-            '0.00',
-        );
-
-        setBlikTxLimit(
-            selectedAccount.limits?.BLIK?.per_transaction_limit ||
-            '0.00',
-        );
-
-        setBlikDailyLimit(
-            selectedAccount.limits?.BLIK?.daily_limit ||
-            '0.00',
-        );
-
         if (selectedAccount.account_type === 'JUNIOR') {
             setActiveTab('PREPAID');
         } else if (activeTab === 'PREPAID') {
@@ -142,35 +116,7 @@ const Cards = () => {
         }
     }, [selectedAccount?.id]);
 
-    const handleSaveLimits = async (
-        channel: 'CARD' | 'BLIK',
-    ) => {
-        setIsSavingLimits(true);
 
-        try {
-            const payload =
-                channel === 'CARD'
-                    ? {
-                        account_id: selectedAccount.id,
-                        channel: 'CARD',
-                        per_transaction_limit: txLimit,
-                        daily_limit: dailyLimit,
-                    }
-                    : {
-                        account_id: selectedAccount.id,
-                        channel: 'BLIK',
-                        per_transaction_limit: blikTxLimit,
-                        daily_limit: blikDailyLimit,
-                    };
-
-            await api.patch('/accounts/limits/', payload);
-            await refreshData();
-        } catch (error) {
-            console.error('Saving limits failed:', error);
-        } finally {
-            setIsSavingLimits(false);
-        }
-    };
 
     const handleToggleFreeze = async () => {
         if (!activeCardId || isCardActionPending) {
@@ -407,16 +353,6 @@ const Cards = () => {
                                 onRemove={() => setIsRemoveModalOpen(true)}
                                 onActivate={handleActivateCard}
                                 onDetails={() => setIsDetailsModalOpen(true)}
-                                txLimit={txLimit}
-                                dailyLimit={dailyLimit}
-                                blikTxLimit={blikTxLimit}
-                                blikDailyLimit={blikDailyLimit}
-                                setTxLimit={setTxLimit}
-                                setDailyLimit={setDailyLimit}
-                                setBlikTxLimit={setBlikTxLimit}
-                                setBlikDailyLimit={setBlikDailyLimit}
-                                onSaveLimits={handleSaveLimits}
-                                isSavingLimits={isSavingLimits}
                                 isCardActionPending={isCardActionPending}
                                 onTopUpClick={() => setIsTopUpModalOpen(true)}
                             />

@@ -21,16 +21,6 @@ interface Props {
   onActivate: () => void;
   onDetails: () => void;
   onTopUpClick: () => void;
-  txLimit: string;
-  dailyLimit: string;
-  blikTxLimit: string;
-  blikDailyLimit: string;
-  setTxLimit: (v: string) => void;
-  setDailyLimit: (v: string) => void;
-  setBlikTxLimit: (v: string) => void;
-  setBlikDailyLimit: (v: string) => void;
-  onSaveLimits: (type: 'CARD' | 'BLIK') => void;
-  isSavingLimits: boolean;
   isCardActionPending: boolean;
 }
 
@@ -47,16 +37,6 @@ const CardManager: React.FC<Props> = ({
   onActivate,
   onDetails,
   onTopUpClick,
-  txLimit,
-  dailyLimit,
-  blikTxLimit,
-  blikDailyLimit,
-  setTxLimit,
-  setDailyLimit,
-  setBlikTxLimit,
-  setBlikDailyLimit,
-  onSaveLimits,
-  isSavingLimits,
   isCardActionPending,
 }) => {
   const activeCard = cardsInTab.find((card) => card.id === activeCardId);
@@ -160,9 +140,11 @@ const CardManager: React.FC<Props> = ({
   );
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-[1.5fr_1fr] gap-4 md:gap-5 mb-4">
+    // ZMIANA 1: Dodano 'max-w-4xl mx-auto', aby panel nie zajmował całej szerokości ekranu
+    <div className="max-w-4xl mx-auto w-full mb-4">
       {/* LEFT COLUMN: CARDS */}
       <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-3xl p-5 md:p-6 flex flex-col shadow-lg min-h-[340px] w-full overflow-hidden">
+        
         {/* HEADER / TABS */}
         <div className="flex flex-wrap justify-between items-center border-b border-[var(--border)] pb-3.5 mb-5 gap-3">
           <div className="flex gap-4 sm:gap-6 overflow-x-auto no-scrollbar w-full sm:w-auto">
@@ -199,13 +181,14 @@ const CardManager: React.FC<Props> = ({
         {/* CARD CONTAINER */}
         <div className="flex-1 flex flex-col justify-center mb-5 w-full">
           {isJunior ? (
-            <div className="w-full">
+            <div className="w-full flex justify-center">
               {cardsInTab.length > 0
                 ? cardsInTab.map(renderCard)
                 : renderAddCard()}
             </div>
           ) : (
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4 w-full">
+            // ZMIANA 2: Użyto 'flex flex-wrap justify-center' zamiast 'grid', aby karty i przycisk trzymały swój rozmiar
+            <div className="flex flex-wrap justify-center gap-6 w-full">
               {cardsInTab.map(renderCard)}
               {cardsInTab.length < 2 && renderAddCard()}
             </div>
@@ -251,6 +234,7 @@ const CardManager: React.FC<Props> = ({
             />
             Details
           </button>
+          
           {canActivate && (
             <button
               onClick={onActivate}
@@ -280,11 +264,11 @@ const CardManager: React.FC<Props> = ({
                   : 'currentColor'
               }
             />
-
             {activeCard?.status === 'FROZEN'
               ? 'Unfreeze'
               : 'Freeze'}
           </button>
+          
           <button
             onClick={onRemove}
             disabled={!canRemove || isCardActionPending}
@@ -296,163 +280,6 @@ const CardManager: React.FC<Props> = ({
             <Trash2 className="w-4 h-4 sm:w-[16px] sm:h-[16px]" />
             Remove
           </button>
-        </div>
-      </div>
-
-      {/* RIGHT COLUMN: SPENDING RULES */}
-      <div className="bg-[var(--bg-surface)] border border-[var(--border)] rounded-3xl p-5 md:p-6 flex flex-col shadow-lg w-full overflow-hidden">
-        <h3 className="text-xs text-[var(--text-secondary)] font-bold mb-4 sm:mb-5 tracking-widest uppercase px-1">
-          Spending Rules
-        </h3>
-
-        <div
-          className={`flex-1 flex flex-col ${isJunior ? 'justify-center pb-6' : ''
-            } gap-4 sm:gap-5`}
-        >
-          {/* CARD LIMITS */}
-          <div className="bg-[var(--bg-base)] rounded-2xl p-4 sm:p-5 border border-[var(--border)] shadow-inner w-full">
-            <div className="flex justify-between items-center mb-4">
-              <p
-                className={`text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] px-1 ${isJunior
-                  ? 'text-purple-400'
-                  : 'text-emerald-400'
-                  }`}
-              >
-                Card Limits
-              </p>
-
-              <button
-                onClick={() => onSaveLimits('CARD')}
-                disabled={isSavingLimits}
-                className={`px-3 py-1.5 rounded-lg text-[8px] sm:text-[9px] font-black uppercase tracking-widest border transition-all shadow-sm ${isJunior
-                  ? 'bg-purple-500/10 text-purple-400 border-purple-500/20 hover:bg-purple-500/20'
-                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
-                  }`}
-              >
-                {isSavingLimits ? '...' : 'Save'}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-3 sm:gap-4 w-full">
-              <div className="w-full">
-                <label className="text-[8px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1.5 block px-1 truncate">
-                  Per Transaction
-                </label>
-
-                <div className="flex items-center bg-[var(--bg-surface)] border border-[var(--border)] rounded-xl px-3 py-2 focus-within:border-[var(--text-secondary)] transition-colors w-full">
-                  <span className="text-[var(--text-muted)] font-bold mr-2 text-xs sm:text-sm">
-                    £
-                  </span>
-
-                  <input
-                    type="number"
-                    value={txLimit}
-                    onChange={(event) => setTxLimit(event.target.value)}
-                    className="w-full bg-transparent text-[var(--text-primary)] font-bold text-xs sm:text-sm outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="w-full">
-                <label className="text-[8px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1.5 block px-1 truncate">
-                  Daily Limit
-                </label>
-
-                <div className="flex items-center bg-[var(--bg-surface)] border border-[var(--border)] rounded-xl px-3 py-2 focus-within:border-[var(--text-secondary)] transition-colors w-full">
-                  <span className="text-[var(--text-muted)] font-bold mr-2 text-xs sm:text-sm">
-                    £
-                  </span>
-
-                  <input
-                    type="number"
-                    value={dailyLimit}
-                    onChange={(event) => setDailyLimit(event.target.value)}
-                    className="w-full bg-transparent text-[var(--text-primary)] font-bold text-xs sm:text-sm outline-none"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* BLIK LIMITS */}
-          {!isJunior && (
-            <div className="bg-[var(--bg-base)] rounded-2xl p-4 sm:p-5 border border-[var(--border)] border-dashed w-full">
-              <div className="flex justify-between items-center mb-4">
-                <p className="text-[9px] sm:text-[10px] text-emerald-400 font-black uppercase tracking-[0.2em] px-1">
-                  BLIK Limits
-                </p>
-
-                <button
-                  onClick={() => onSaveLimits('BLIK')}
-                  disabled={isSavingLimits}
-                  className="px-3 py-1.5 bg-emerald-500/10 text-emerald-400 rounded-lg text-[8px] sm:text-[9px] font-black uppercase tracking-widest border border-emerald-500/20 hover:bg-emerald-500/20 transition-all shadow-sm"
-                >
-                  {isSavingLimits ? '...' : 'Save'}
-                </button>
-              </div>
-
-              <div className="grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-3 sm:gap-4 w-full">
-                <div className="w-full">
-                  <label className="text-[8px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1.5 block px-1 truncate">
-                    Per Transaction
-                  </label>
-
-                  <div className="flex items-center bg-[var(--bg-surface)] border border-[var(--border)] rounded-xl px-3 py-2 focus-within:border-emerald-500 transition-colors w-full">
-                    <span className="text-[var(--text-muted)] font-bold mr-2 text-xs sm:text-sm">
-                      £
-                    </span>
-
-                    <input
-                      type="number"
-                      value={blikTxLimit}
-                      onChange={(event) =>
-                        setBlikTxLimit(event.target.value)
-                      }
-                      className="w-full bg-transparent text-[var(--text-primary)] font-bold text-xs sm:text-sm outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div className="w-full">
-                  <label className="text-[8px] font-bold text-[var(--text-muted)] uppercase tracking-widest mb-1.5 block px-1 truncate">
-                    Daily Limit
-                  </label>
-
-                  <div className="flex items-center bg-[var(--bg-surface)] border border-[var(--border)] rounded-xl px-3 py-2 focus-within:border-emerald-500 transition-colors w-full">
-                    <span className="text-[var(--text-muted)] font-bold mr-2 text-xs sm:text-sm">
-                      £
-                    </span>
-
-                    <input
-                      type="number"
-                      value={blikDailyLimit}
-                      onChange={(event) =>
-                        setBlikDailyLimit(event.target.value)
-                      }
-                      className="w-full bg-transparent text-[var(--text-primary)] font-bold text-xs sm:text-sm outline-none"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {isJunior && (
-            <div className="text-center px-4 mt-2 opacity-80 animate-fadeIn">
-              <div className="inline-flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-purple-500/10 mb-3 sm:mb-4 border border-purple-500/20">
-                <ShieldCheck className="w-5 h-5 sm:w-6 sm:h-6 text-purple-400" />
-              </div>
-
-              <h4 className="text-[9px] sm:text-[10px] text-[var(--text-secondary)] font-black uppercase tracking-widest mb-2">
-                Secure Account
-              </h4>
-
-              <p className="text-[9px] sm:text-[10px] text-gray-600 leading-relaxed max-w-[260px] mx-auto">
-                Prepaid limits guarantee controlled spending. BLIK and
-                credit services are disabled.
-              </p>
-            </div>
-          )}
         </div>
       </div>
     </div>

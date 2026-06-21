@@ -25,6 +25,7 @@ from .serializers import (
 from accounts.models import Account
 from notifications.utils import notify
 from transactions.models import Transaction
+from limits.models import AccountLimits, PaymentChannel
 
 from .models import Card, CardPaymentCapture
 from .provider_client import get_card, issue_card, update_card_status, topup_prepaid, activate_card
@@ -167,6 +168,18 @@ class CreateCardView(GenericAPIView):
             pin=None,
             expiry_date=expiry_date,
             status=local_status,
+        )
+
+        card_limit_defaults = AccountLimits.card_defaults_for(
+            account.account_type,
+            card.card_type,
+        )
+
+        AccountLimits.objects.get_or_create(
+            account=account,
+            card=card,
+            channel=PaymentChannel.CARD,
+            defaults=card_limit_defaults,
         )
 
         notify(

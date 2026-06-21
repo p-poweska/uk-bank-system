@@ -1,15 +1,48 @@
 from rest_framework import serializers
 from .models import Card
 from decimal import Decimal
+from limits.models import AccountLimits, PaymentChannel
 
 class CardSerializer(serializers.ModelSerializer):
+    limits = serializers.SerializerMethodField()
+
     class Meta:
         model = Card
         fields = [
-            'id', 'card_type', 'masked_number', 'full_number', 
-            'expiry_date', 'cardholder_name', 'status', 
-            'cvv', 'pin', 'prepaid_balance',  'is_archived',
+            'id',
+            'card_type',
+            'masked_number',
+            'full_number',
+            'expiry_date',
+            'cardholder_name',
+            'status',
+            'cvv',
+            'pin',
+            'prepaid_balance',
+            'is_archived',
+            'limits',
         ]
+
+    def get_limits(self, obj):
+        limit = obj.limits.filter(
+            channel=PaymentChannel.CARD,
+        ).first()
+
+        if not limit:
+            defaults = AccountLimits.card_defaults_for(
+                obj.account.account_type,
+                obj.card_type,
+            )
+
+            return {
+                "per_transaction_limit": str(defaults["per_transaction_limit"]),
+                "daily_limit": str(defaults["daily_limit"]),
+            }
+
+        return {
+            "per_transaction_limit": str(limit.per_transaction_limit),
+            "daily_limit": str(limit.daily_limit),
+        }
 
 class SyncCardStatusSerializer(serializers.Serializer):
     local_card_id = serializers.UUIDField()

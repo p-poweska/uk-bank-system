@@ -22,6 +22,7 @@ import Layout from './components/Layout';
 import JuniorLayout from './components/JuniorLayout';
 import { ThemeProvider } from './context/ThemeContext';
 import Klik from './pages/Klik';
+import Limits from './pages/Limits';
 
 function App() {
   return (
@@ -66,6 +67,7 @@ function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/accounts" element={<Accounts />} />
             <Route path="/cards" element={<Cards />} />
+            <Route path="/limits" element={<Limits />} />
             <Route path="/klik" element={<Klik />} />
             <Route path="/history" element={<History />} />
             <Route path="/settings" element={<Settings />} />

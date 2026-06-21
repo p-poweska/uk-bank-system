@@ -18,12 +18,15 @@ class AccountSerializer(serializers.ModelSerializer):
         fields = ['id', 'account_number', 'sort_code', 'iban', 'currency', 'balance', 'account_type',  'available_balance', 'status', 'owner_first_name','owner_last_name', 'limits','cards']
 
     def get_limits(self, obj):
+        allowed_channels = {"BLIK", "BLIK_PHONE"}
+
         return {
             limit.channel: {
                 "per_transaction_limit": limit.per_transaction_limit,
-                "daily_limit": limit.daily_limit
+                "daily_limit": limit.daily_limit,
             }
             for limit in obj.limits.all()
+            if limit.card_id is None and limit.channel in allowed_channels
         }
 
     def get_cards(self, obj):
