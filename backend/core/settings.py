@@ -213,6 +213,17 @@ UKPS_FPS_MAX_AMOUNT = os.environ.get("UKPS_FPS_MAX_AMOUNT", "250000")
 # Leave blank to record such payments as UNMATCHED instead of crediting.
 UKPS_INBOUND_FALLBACK_ACCOUNT = os.environ.get("UKPS_INBOUND_FALLBACK_ACCOUNT", "")
 
+# UKPS recipient bank directory.
+# In the external UKPS simulator, domestic banks are identified by BIC,
+# but the customer should not type BIC manually for FPS/BACS/CHAPS.
+# The bank resolves it from the recipient IBAN sort code.
+UKPS_SORT_CODE_TO_BIC = {
+    "20-00-00": os.environ.get("UKPS_BIC_SORT_200000", "BARCGB2L"),
+    "40-00-00": os.environ.get("UKPS_BIC_SORT_400000", "HSBCGB44"),
+    "30-00-00": os.environ.get("UKPS_BIC_SORT_300000", "LLOYGB21"),
+    "60-00-00": os.environ.get("UKPS_BIC_SORT_600000", "SNDRUK22"),
+}
+
 
 # ---------------------------------------------------------------------------
 # SWIFT middleware — outgoing international transfers

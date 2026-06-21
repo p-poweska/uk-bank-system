@@ -60,6 +60,20 @@ def sort_code_from_iban(iban: str) -> str:
         return f"{d[0:2]}-{d[2:4]}-{d[4:6]}"
     return ""
 
+def normalize_sort_code(sort_code: str) -> str:
+    digits = "".join(ch for ch in str(sort_code or "") if ch.isdigit())
+
+    if len(digits) == 6:
+        return f"{digits[0:2]}-{digits[2:4]}-{digits[4:6]}"
+
+    return str(sort_code or "").strip()
+
+
+def bic_from_sort_code(sort_code: str) -> str:
+    sort_code = normalize_sort_code(sort_code)
+    directory = getattr(settings, "UKPS_SORT_CODE_TO_BIC", {})
+    return (directory.get(sort_code) or "").strip().upper()
+
 
 def account_from_iban(iban: str) -> str:
     iban = (iban or "").replace(" ", "").upper()
@@ -145,18 +159,22 @@ def _auth_headers(api_key: str) -> dict:
 
 
 def _send_json_scheme(scheme, api_key, *, receiver_bic, receiver_sort_code,
-                      amount, msg_id, end_to_end_id):
+                      receiver_account, amount, msg_id, end_to_end_id):
     """CHAPS / FPS share the same JSON submission contract."""
     path = "/v1/payments/chaps" if scheme == Scheme.CHAPS else "/v1/payments/fps"
+
+    payload = {
+        "msg_id": msg_id,
+        "end_to_end_id": end_to_end_id,
+        "receiver_bic": receiver_bic,
+        "receiver_sort_code": receiver_sort_code,
+        "receiver_account": receiver_account,
+        "amount": float(amount),
+    }
+
     resp = requests.post(
         f"{_base_url(scheme)}{path}",
-        json={
-            "msg_id": msg_id,
-            "end_to_end_id": end_to_end_id,
-            "receiver_bic": receiver_bic,
-            "receiver_sort_code": receiver_sort_code,
-            "amount": float(amount),
-        },
+        json=payload,
         headers=_auth_headers(api_key),
         timeout=TIMEOUT,
     )
@@ -202,12 +220,28 @@ def send_payment(*, scheme, receiver_bic, amount, recipient_account="",
     :data:`SUCCESS_STATUSES` to decide whether to move funds locally.
     """
     scheme = str(scheme).upper()
-    if scheme not in (Scheme.CHAPS, Scheme.FPS, Scheme.BACS):
-        raise UKPSError(f"Unknown scheme {scheme!r}")
-
     if not receiver_sort_code:
         receiver_sort_code = sort_code_from_iban(recipient_account)
+
+    receiver_sort_code = normalize_sort_code(receiver_sort_code)
     receiver_account = account_from_iban(recipient_account)
+
+    if not receiver_bic:
+        receiver_bic = bic_from_sort_code(receiver_sort_code)
+
+    receiver_bic = (receiver_bic or "").strip().upper()
+
+    if not receiver_bic:
+        raise UKPSError(
+            f"Could not resolve recipient bank BIC from sort code '{receiver_sort_code}'."
+        )
+
+    if not receiver_sort_code:
+        raise UKPSError("Could not resolve recipient sort code from recipient account.")
+
+    if scheme == Scheme.BACS and not receiver_account:
+        raise UKPSError("BACS requires a UK IBAN containing an 8-digit account number.")
+
     msg_id = new_msg_id()
 
     payment = UKPSPayment(
@@ -231,9 +265,14 @@ def send_payment(*, scheme, receiver_bic, amount, recipient_account="",
             )
         else:
             resp = _send_json_scheme(
-                scheme, reg.api_key, receiver_bic=receiver_bic,
-                receiver_sort_code=receiver_sort_code, amount=amount,
-                msg_id=msg_id, end_to_end_id=msg_id,
+                scheme,
+                reg.api_key,
+                receiver_bic=receiver_bic,
+                receiver_sort_code=receiver_sort_code,
+                receiver_account=receiver_account,
+                amount=amount,
+                msg_id=msg_id,
+                end_to_end_id=msg_id,
             )
     except (requests.RequestException, UKPSError) as exc:
         payment.reason_code = str(exc)[:64]
