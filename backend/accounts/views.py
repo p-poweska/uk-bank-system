@@ -12,11 +12,12 @@ from customers.models import Customer
 from django.db.models import Q, Prefetch
 from datetime import datetime, date
 import re
-from limits.models import AccountLimits
+from limits.models import AccountLimits, PaymentChannel
 from cards.serializers import CardSerializer
 from transactions.models import Transaction
 from notifications.utils import notify
 from cards.models import Card
+from decimal import Decimal
 
 class MyAccountsListView(generics.ListAPIView):
     serializer_class = AccountSerializer
@@ -146,30 +147,146 @@ class UpdateAccountLimitsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def patch(self, request):
-        account_id = request.data.get('account_id')
-        channel = request.data.get('channel') 
-        
-        if not account_id or not channel:
-            return Response({"error": "account_id and channel are required"}, status=status.HTTP_400_BAD_REQUEST)
+        account_id = request.data.get("account_id")
+        card_id = request.data.get("card_id")
+        channel = request.data.get("channel")
+
+        if not channel:
+            return Response(
+                {"error": "channel is required"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        valid_channels = [choice[0] for choice in PaymentChannel.choices]
+
+        if channel not in valid_channels:
+            return Response(
+                {"error": f"Invalid limit channel: {channel}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         user_customer = request.user.customer
-        account = get_object_or_404(Account, id=account_id)
 
-        
-        if account.customer != user_customer and account.customer.parent_customer != user_customer:
-            return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
+        if channel == PaymentChannel.CARD:
+            if not card_id:
+                return Response(
+                    {"error": "card_id is required for card limits"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-        
+            card = get_object_or_404(
+                Card.objects.select_related("account__customer"),
+                id=card_id,
+                is_archived=False,
+            )
+
+            account = card.account
+
+            if (
+                account.customer != user_customer
+                and account.customer.parent_customer != user_customer
+            ):
+                return Response(
+                    {"error": "Unauthorized"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            defaults = AccountLimits.card_defaults_for(
+                account.account_type,
+                card.card_type,
+            )
+
+            limit, _ = AccountLimits.objects.get_or_create(
+                account=account,
+                card=card,
+                channel=PaymentChannel.CARD,
+                defaults=defaults,
+            )
+
+        else:
+            if channel not in [PaymentChannel.BLIK, PaymentChannel.BLIK_PHONE]:
+                return Response(
+                    {"error": "Only card and KLIK limits are supported"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if not account_id:
+                return Response(
+                    {"error": "account_id is required"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            account = get_object_or_404(Account, id=account_id)
+
+            if (
+                account.customer != user_customer
+                and account.customer.parent_customer != user_customer
+            ):
+                return Response(
+                    {"error": "Unauthorized"},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            defaults = AccountLimits.defaults_for(account.account_type).get(
+                channel,
+                {
+                    "per_transaction_limit": Decimal("0.00"),
+                    "daily_limit": Decimal("0.00"),
+                },
+            )
+
+            limit, _ = AccountLimits.objects.get_or_create(
+                account=account,
+                card=None,
+                channel=channel,
+                defaults=defaults,
+            )
+
         try:
-            limit = account.limits.get(channel=channel)
-        except AccountLimits.DoesNotExist:
-            return Response({"error": f"Limit for channel {channel} not found"}, status=status.HTTP_404_NOT_FOUND)
-        
-        
-        if 'per_transaction_limit' in request.data:
-            limit.per_transaction_limit = request.data['per_transaction_limit']
-        if 'daily_limit' in request.data:
-            limit.daily_limit = request.data['daily_limit']
+            per_transaction_limit = Decimal(
+                str(request.data.get("per_transaction_limit", limit.per_transaction_limit))
+            )
 
-        limit.save()
-        return Response({"message": "Limits updated successfully"}, status=status.HTTP_200_OK)
+            daily_limit = Decimal(
+                str(request.data.get("daily_limit", limit.daily_limit))
+            )
+
+        except Exception:
+            return Response(
+                {"error": "Invalid limit value"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if per_transaction_limit < 0 or daily_limit < 0:
+            return Response(
+                {"error": "Limits cannot be negative"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if per_transaction_limit > daily_limit:
+            return Response(
+                {"error": "Per transaction limit cannot be higher than daily limit"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        limit.per_transaction_limit = per_transaction_limit
+        limit.daily_limit = daily_limit
+        limit.save(
+            update_fields=[
+                "per_transaction_limit",
+                "daily_limit",
+                "updated_at",
+            ],
+        )
+
+        return Response(
+            {
+                "message": "Limits updated successfully",
+                "channel": limit.channel,
+                "account_id": str(limit.account_id),
+                "card_id": str(limit.card_id) if limit.card_id else None,
+                "per_transaction_limit": str(limit.per_transaction_limit),
+                "daily_limit": str(limit.daily_limit),
+            },
+            status=status.HTTP_200_OK,
+        )
