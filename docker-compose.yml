@@ -1,5 +1,4 @@
-﻿
-services:
+﻿services:
   db:
     image: postgres:17-alpine
     volumes:
@@ -9,11 +8,22 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     ports:
-      - "5532:5532"
+      - "5532:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
 
   backend:
     build: ./backend
-    command: python manage.py runserver 0.0.0.0:8000
+    command: >
+      sh -c "
+      python manage.py migrate --noinput &&
+      python manage.py ensure_admin &&
+      python manage.py ukps_register &&
+      python manage.py runserver 0.0.0.0:8000
+      "
     volumes:
       - ./backend:/app
     ports:
@@ -26,13 +36,23 @@ services:
       - DB_PORT=5432
       - SECRET_KEY=${DJANGO_SECRET_KEY}
       - DEBUG=${DJANGO_DEBUG}
+
+      # Auto-created Django admin user
+      - DJANGO_SUPERUSER_EMAIL=${DJANGO_SUPERUSER_EMAIL:-admin@test.com}
+      - DJANGO_SUPERUSER_PASSWORD=${DJANGO_SUPERUSER_PASSWORD:-admin123}
+      - DJANGO_SUPERUSER_RESET_PASSWORD=${DJANGO_SUPERUSER_RESET_PASSWORD:-False}
+
+      # KLIK
       - KLIK_BASE_URL=${KLIK_BASE_URL}
       - KLIK_BANK_API_KEY=${KLIK_BANK_API_KEY}
       - KLIK_ZONE=${KLIK_ZONE}
+
+      # Card gateway
       - CARD_GATEWAY_BASE_URL=${CARD_GATEWAY_BASE_URL}
       - CARD_GATEWAY_API_KEY=${CARD_GATEWAY_API_KEY}
       - CARD_GATEWAY_HMAC_SECRET=${CARD_GATEWAY_HMAC_SECRET}
-      # UK Payment Systems (CHAPS/FPS/BACS) — reached over the host network.
+
+      # UK Payment Systems CHAPS/FPS/BACS
       - UKPS_CHAPS_URL=${UKPS_CHAPS_URL:-http://host.docker.internal:8420}
       - UKPS_FPS_URL=${UKPS_FPS_URL:-http://host.docker.internal:8421}
       - UKPS_BACS_URL=${UKPS_BACS_URL:-http://host.docker.internal:8422}
@@ -49,6 +69,7 @@ services:
       - UKPS_BIC_SORT_400000=${UKPS_BIC_SORT_400000:-HSBCGB44}
       - UKPS_BIC_SORT_300000=${UKPS_BIC_SORT_300000:-LLOYGB21}
       - UKPS_BIC_SORT_600000=${UKPS_BIC_SORT_600000:-SNDRUK22}
+
       # SWIFT middleware — outgoing international transfers
       - SWIFT_BASE_URL=${SWIFT_BASE_URL:-http://host.docker.internal:3000}
       - SWIFT_CLIENT_ID=${SWIFT_CLIENT_ID:-bank-ukbkgb01}
@@ -62,27 +83,34 @@ services:
       - SWIFT_FEE_OUR_GBP=${SWIFT_FEE_OUR_GBP:-15.00}
       - SWIFT_FEE_SHA_GBP=${SWIFT_FEE_SHA_GBP:-5.00}
       - SWIFT_FEE_BEN_GBP=${SWIFT_FEE_BEN_GBP:-0.00}
-
     depends_on:
-      - db
-
+      db:
+        condition: service_healthy
     networks:
       default:
       cards-backend:
         aliases:
           - uk-bank-a
 
-  # Long-running consumer of inbound CHAPS/FPS/BACS payments (SSE).
   ukps-listener:
     build: ./backend
-    command: python manage.py ukps_listen
+    command: >
+      sh -c "
+      until python manage.py migrate --check; do
+        echo 'Waiting for backend migrations...';
+        sleep 2;
+      done;
+      python manage.py ukps_listen
+      "
     restart: unless-stopped
     volumes:
       - ./backend:/app
     environment: *backend_env
     depends_on:
-      - db
-      - backend
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_started
 
   frontend:
     build: ./frontend
@@ -97,17 +125,6 @@ services:
       - WATCHPACK_POLLING=true
     depends_on:
       - backend
-  
-
-  pgadmin:
-    image: dpage/pgadmin4
-    environment:
-      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL}
-      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD}
-    ports:
-      - "5050:80"
-    depends_on:
-      - db
 
 volumes:
   postgres_data:
