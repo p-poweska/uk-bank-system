@@ -254,6 +254,58 @@ Jeżeli administrator już istnieje, nie jest tworzony drugi raz. Hasło jest re
 DJANGO_SUPERUSER_RESET_PASSWORD=True
 ```
 
+
+### Dane testowe z seedera `seed_demo`
+
+Projekt posiada komendę seedującą dane demonstracyjne:
+
+```bash
+docker compose exec backend python manage.py seed_demo
+```
+
+Jeżeli baza ma zostać wyczyszczona z poprzednich danych demo i odtworzona od początku:
+
+```bash
+docker compose exec backend python manage.py seed_demo --reset
+```
+
+Seeder tworzy minimalny, sensowny zestaw danych do testowania aplikacji:
+
+- jedno konto główne rodzica,
+- jedno konto junior przypisane do rodzica,
+- jednego lokalnego odbiorcę w tym samym banku,
+- przykładową historię transakcji,
+- zapisanych odbiorców do testów przelewów lokalnych, FPS/BACS oraz SWIFT,
+- limity KLIK/BLIK dla kont.
+
+
+#### Użytkownicy testowi
+
+| Rola | E-mail | Hasło | Zastosowanie |
+|---|---|---|---|
+| Rodzic / klient główny | `demo.parent@ukbank.test` | `demo123` | Główne konto testowe, przelewy, KLIK, konto junior |
+| Junior | `demo.junior@ukbank.test` | `demo123` | Logowanie jako dziecko i test konta junior |
+| Lokalny odbiorca | `demo.receiver@ukbank.test` | `demo123` | Odbiorca do testów przelewów wewnętrznych |
+
+#### Rachunki testowe
+
+| Użytkownik | Typ konta | IBAN | Sort code | Numer konta | Saldo startowe |
+|---|---|---|---|---|---:|
+| `demo.parent@ukbank.test` | `CURRENT` | `GB89LYOB10203000000001` | `10-20-30` | `00000001` | `£4872.50` |
+| `demo.receiver@ukbank.test` | `CURRENT` | `GB89LYOB10203000000002` | `10-20-30` | `00000002` | `£1400.00` |
+| `demo.junior@ukbank.test` | `JUNIOR` | `GB89LYOB10203000000003` | `10-20-30` | `00000003` | `£150.00` |
+
+#### Przykładowe dane do testów przelewów
+
+| Typ testu | Dane |
+|---|---|
+| Przelew wewnętrzny | odbiorca: `demo.receiver@ukbank.test`, IBAN: `GB89LYOB10203000000002` |
+| FPS | odbiorca zewnętrzny: `GB00BARC20000012345678`, routing: `FPS` |
+| BACS | odbiorca zewnętrzny: `GB00HSBC40000012345678`, routing: `BACS` |
+| CHAPS | odbiorca zewnętrzny: `GB00LLOY30000012345678`, routing: `CHAPS` |
+| SWIFT | rachunek: `US123456789012345678901234`, BIC: `USBKUS01XXX`, waluta: `USD`, charge bearer: `SHA` |
+
+
 ---
 
 ## 5. Konfiguracja `.env`
@@ -1108,6 +1160,7 @@ docker compose exec backend python manage.py <komenda>
 | `ukps_keys` | wypisuje zapisane klucze UKPS |
 | `ukps_listen` | uruchamia listener SSE dla inbound payments |
 | `ukps_reconcile` | próbuje rozliczyć lokalnie płatności oczekujące |
+| `seed_demo` | tworzy minimalne dane demonstracyjne: użytkownicy, rachunki, historia, odbiorcy i limity |
 
 Przykłady:
 
@@ -1282,13 +1335,26 @@ admin@test.com / admin123
 docker compose exec backend python manage.py check
 ```
 
-### 14.3 Sprawdzenie UKPS
+### 14.3 Utworzenie danych demonstracyjnych
+
+```bash
+docker compose exec backend python manage.py seed_demo --reset
+```
+
+Po wykonaniu komendy można zalogować się na konto rodzica:
+
+```text
+demo.parent@ukbank.test / demo123
+```
+
+
+### 14.4 Sprawdzenie UKPS
 
 ```bash
 docker compose exec backend python manage.py ukps_keys
 ```
 
-### 14.4 Test FPS
+### 14.5 Test FPS
 
 Przykładowy odbiorca:
 
@@ -1309,7 +1375,7 @@ sort code: 20-00-00
 BIC: BARCGB2L
 ```
 
-### 14.5 Test BACS
+### 14.6 Test BACS
 
 Przykładowy odbiorca:
 
@@ -1325,11 +1391,11 @@ BACS
 
 Bank powinien wysłać płatność do BACS jako plik Standard 18.
 
-### 14.6 Test CHAPS po cutoffie
+### 14.7 Test CHAPS po cutoffie
 
 Po godzinie granicznej CHAPS system może zwrócić komunikat, że płatność nie została przyjęta. Frontend pokazuje błąd użytkownikowi, np. że minął cutoff i należy użyć FPS albo spróbować następnego dnia roboczego.
 
-### 14.7 Test SWIFT
+### 14.8 Test SWIFT
 
 Przykładowe dane:
 
@@ -1343,7 +1409,7 @@ charge bearer: SHA
 
 Bank wyliczy debet w GBP i zapisze szczegóły SWIFT w modelu `Transfer`.
 
-### 14.8 Test kart
+### 14.9 Test kart
 
 1. Wejdź w `/cards`.
 2. Utwórz kartę `VIRTUAL`, `PHYSICAL` albo `PREPAID`.
@@ -1351,7 +1417,7 @@ Bank wyliczy debet w GBP i zapisze szczegóły SWIFT w modelu `Transfer`.
 4. Dla prepaid wykonaj top-up.
 5. W `/limits` ustaw limit konkretnej karty.
 
-### 14.9 Test KLIK
+### 14.10 Test KLIK
 
 1. Wejdź w `/klik`.
 2. Zarejestruj alias telefonu.
