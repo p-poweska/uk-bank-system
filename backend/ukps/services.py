@@ -4,6 +4,7 @@ Outbound only: this bank submits CHAPS / FPS / BACS payments to the external
 uk-payment-systems services. The bank auto-registers itself in each scheme on
 first use and persists the returned API key.
 """
+import time
 import uuid
 import logging
 from datetime import date
@@ -385,6 +386,84 @@ def record_inbound(*, scheme, msg_id, sender_bic="", amount=None,
 
     logger.info("Inbound %s %s -> %s [%s]", scheme, msg_id, account_number, inbound.status)
     return inbound, True
+
+
+# --------------------------------------------------------------------------- #
+# Inbound BACS (credited from the settled-liquidity delta)
+# --------------------------------------------------------------------------- #
+def _bacs_balance():
+    """Return (our current BACS liquidity, the BACS registration)."""
+    reg = ensure_registered(Scheme.BACS)
+    resp = requests.get(
+        f"{_base_url(Scheme.BACS)}/v1/participants/positions",
+        headers={"Authorization": f"Bearer {reg.api_key}"},
+        timeout=TIMEOUT,
+    )
+    resp.raise_for_status()
+    return Decimal(str(resp.json().get("balance", 0))), reg
+
+
+def credit_bacs_settlement():
+    """Credit inbound BACS by the increase in our settled liquidity.
+
+    The BACS ``cycle.settled`` event carries no amount/account, and the netting
+    report cannot reliably target the just-settled cycle (same-day cycles share
+    an input_date). Instead we track our BACS liquidity: any positive delta at a
+    settlement is the net amount we received, which we post to the fallback
+    account. (Net, not gross — exact when the bank only receives in a cycle.)
+    """
+    from django.db import transaction as db_tx
+    from accounts.models import Account
+    from transactions.models import Transaction
+    from notifications.utils import notify
+
+    try:
+        balance, _ = _bacs_balance()
+    except (requests.RequestException, UKPSError, ValueError) as exc:
+        logger.warning("BACS settlement: cannot read position: %s", exc)
+        return
+
+    fallback = getattr(settings, "UKPS_INBOUND_FALLBACK_ACCOUNT", "") or ""
+
+    with db_tx.atomic():
+        reg = UKPSRegistration.objects.select_for_update().get(scheme=Scheme.BACS)
+
+        # First observation just sets the baseline — never credit historical balance.
+        if reg.bacs_settled_balance is None:
+            reg.bacs_settled_balance = balance
+            reg.save(update_fields=["bacs_settled_balance"])
+            return
+
+        delta = balance - reg.bacs_settled_balance
+        reg.bacs_settled_balance = balance
+        reg.save(update_fields=["bacs_settled_balance"])
+        if delta <= 0:
+            return  # net outflow (our own outbound) or nothing received
+
+        account = (
+            Account.objects.select_for_update().filter(account_number=fallback).first()
+            if fallback else None
+        )
+        inbound = UKPSInboundPayment.objects.create(
+            scheme=Scheme.BACS, msg_id=f"bacs-settle-{int(time.time()*1000)}",
+            sender_bic="", amount=delta, account=account,
+            account_number=fallback, status="CREDITED" if account else "UNMATCHED",
+            raw_event={"source": "bacs_settlement_delta", "balance": str(balance)},
+        )
+        if account:
+            account.balance += delta
+            account.available_balance += delta
+            account.save()
+            owner = _account_owner(account)
+            if owner:
+                Transaction.objects.create(
+                    user=owner, account=account, amount=delta,
+                    title="Inbound BACS settlement",
+                    balance_after=account.available_balance,
+                )
+                notify(owner, "Money received", f"You received £{delta} via BACS.")
+
+    logger.info("BACS settlement: credited £%s to %s [%s]", delta, fallback, inbound.status)
 
 
 # --------------------------------------------------------------------------- #

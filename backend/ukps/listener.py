@@ -63,11 +63,13 @@ def handle_event(scheme, event):
             account_number="",
             raw_event=data,
         )
-        # A settled cycle is the moment our queued outbound BACS payments clear.
+        # A settled cycle is the moment our queued outbound BACS payments clear,
+        # and the moment inbound BACS credits land in our liquidity.
         try:
             services.reconcile_pending()
+            services.credit_bacs_settlement()
         except Exception:
-            logger.exception("UKPS %s: reconcile after cycle.settled failed", scheme)
+            logger.exception("UKPS %s: post-cycle.settled processing failed", scheme)
     else:
         logger.debug("UKPS %s: ignoring event type %r", scheme, etype)
 
@@ -88,6 +90,7 @@ def run_reconciler(stop_event=None, interval=30):
             res = services.reconcile_pending()
             if res["completed"] or res["failed"]:
                 logger.info("UKPS reconcile: %s", res)
+            services.credit_bacs_settlement()
         except Exception:
             logger.exception("UKPS reconcile loop error")
         for _ in range(interval):
