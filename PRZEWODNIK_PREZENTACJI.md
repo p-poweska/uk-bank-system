@@ -24,7 +24,7 @@ host `db`, port `5432`, baza `uk_bank_db`, user `bank_admin`, hasło `bank_passw
 
 **Konta testowe w aplikacji:**
 - Konto główne: `72844746` (CURRENT, GBP) — nadawca wszystkich przelewów.
-- Konto odbiorcy KLIK: `61242659` (alias telefonu `+447900000002`).
+- Konto odbiorcy KLIK: `61242659` (alias KLIK `712345678`).
 
 ---
 
@@ -53,8 +53,9 @@ Wpisz **IBAN spoza GB** → formularz sam przełączy sieć na **SWIFT**, wybier
 Bank przelicza GBP → walutę docelową (kurs stały) i dolicza prowizję.
 
 ### KLIK
-- **Alias:** numer telefonu, np. `+447900000001` (Twój), `+447900000002` (odbiorca).
-- **P2P:** wyślij na `+447900000002`, np. £30.
+> ⚠️ W GUI wpisujesz **9 cyfr bez `+44`** (aplikacja sama dokleja `+44`). Placeholder: `712345678`.
+- **Alias:** 9-cyfrowy numer, np. `712345678` (odbiorca już ma zarejestrowany ten alias).
+- **P2P:** wyślij na `712345678`, np. £30 (trafia na konto `klik_rcpt`).
 - **Kod:** generujesz 6-cyfrowy kod (ważny 120 s).
 
 ### Karta
@@ -98,9 +99,9 @@ Bank przelicza GBP → walutę docelową (kurs stały) i dolicza prowizję.
 2. Wróć do aplikacji → **saldo +£250 i powiadomienie** (bank odebrał z sieci przez listener SSE).
 
 ### G. KLIK
-1. Zakładka **Klik** → *Zarejestruj alias* `+447900000001`.
+1. Zakładka **Klik** → *Zarejestruj alias* (wpisz 9 cyfr, np. `722222222`).
 2. *Wygeneruj kod* — pokaż 6-cyfrowy kod.
-3. *P2P send* → telefon `+447900000002`, kwota `30` → **Completed**.
+3. *P2P send* → telefon `712345678` (9 cyfr), kwota `30` → **Completed** (trafia do `klik_rcpt`).
 4. **Weryfikacja:** http://localhost:5175 (UI agenta) lub:
    ```bash
    docker exec klik-payments-web-1 python manage.py shell -c "from codes.models import Transaction; [print(t.id,t.status,t.zone) for t in Transaction.objects.all()[:10]]"

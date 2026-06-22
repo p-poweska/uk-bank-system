@@ -222,6 +222,9 @@ UKPS_SORT_CODE_TO_BIC = {
     "40-00-00": os.environ.get("UKPS_BIC_SORT_400000", "HSBCGB44"),
     "30-00-00": os.environ.get("UKPS_BIC_SORT_300000", "LLOYGB21"),
     "60-00-00": os.environ.get("UKPS_BIC_SORT_600000", "SNDRUK22"),
+    # Inter-bank: the two Lyo Bank instances address each other by sort code.
+    "10-20-30": os.environ.get("UKPS_BIC_SORT_102030", "LYOBGB2L"),
+    "11-22-33": os.environ.get("UKPS_BIC_SORT_112233", "LYOCGB2L"),
 }
 
 
